@@ -1,13 +1,15 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.ml.dataframe;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
+import org.apache.lucene.util.SetOnce;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.index.IndexAction;
 import org.elasticsearch.action.index.IndexRequest;
@@ -18,7 +20,8 @@ import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.support.WriteRequest;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.ParentTaskAssigningClient;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.Nullable;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.json.JsonXContent;
 import org.elasticsearch.index.query.IdsQueryBuilder;
@@ -60,7 +63,7 @@ public class DataFrameAnalyticsTask extends AllocatedPersistentTask implements S
     private final StartDataFrameAnalyticsAction.TaskParams taskParams;
     private volatile boolean isStopping;
     private volatile boolean isMarkAsCompletedCalled;
-    private final StatsHolder statsHolder;
+    private volatile StatsHolder statsHolder;
     private volatile DataFrameAnalyticsStep currentStep;
 
     public DataFrameAnalyticsTask(long id, String type, String action, TaskId parentTask, Map<String, String> headers,
@@ -71,7 +74,6 @@ public class DataFrameAnalyticsTask extends AllocatedPersistentTask implements S
         this.analyticsManager = Objects.requireNonNull(analyticsManager);
         this.auditor = Objects.requireNonNull(auditor);
         this.taskParams = Objects.requireNonNull(taskParams);
-        this.statsHolder = new StatsHolder(taskParams.getProgressOnStart());
     }
 
     public void setStep(DataFrameAnalyticsStep step) {
@@ -86,6 +88,11 @@ public class DataFrameAnalyticsTask extends AllocatedPersistentTask implements S
         return isStopping;
     }
 
+    public void setStatsHolder(StatsHolder statsHolder) {
+        this.statsHolder = Objects.requireNonNull(statsHolder);
+    }
+
+    @Nullable
     public StatsHolder getStatsHolder() {
         return statsHolder;
     }
@@ -181,20 +188,22 @@ public class DataFrameAnalyticsTask extends AllocatedPersistentTask implements S
         });
     }
 
-    public void persistProgress() {
-        persistProgress(client, taskParams.getId(), () -> {});
+    public void persistProgress(Runnable runnable) {
+        persistProgress(client, taskParams.getId(), runnable);
     }
 
     // Visible for testing
     void persistProgress(Client client, String jobId, Runnable runnable) {
         LOGGER.debug("[{}] Persisting progress", jobId);
 
+        SetOnce<StoredProgress> storedProgress = new SetOnce<>();
+
         String progressDocId = StoredProgress.documentId(jobId);
 
         // Step 4: Run the runnable provided as the argument
         ActionListener<IndexResponse> indexProgressDocListener = ActionListener.wrap(
             indexResponse -> {
-                LOGGER.debug("[{}] Successfully indexed progress document", jobId);
+                LOGGER.debug("[{}] Successfully indexed progress document: {}", jobId, storedProgress.get().get());
                 runnable.run();
             },
             indexError -> {
@@ -221,10 +230,11 @@ public class DataFrameAnalyticsTask extends AllocatedPersistentTask implements S
                 }
 
                 List<PhaseProgress> progress = statsHolder.getProgressTracker().report();
-                final StoredProgress progressToStore = new StoredProgress(progress);
-                if (progressToStore.equals(previous)) {
+                storedProgress.set(new StoredProgress(progress));
+                if (storedProgress.get().equals(previous)) {
                     LOGGER.debug(() -> new ParameterizedMessage(
-                        "[{}] new progress is the same as previously persisted progress. Skipping storage.", jobId));
+                        "[{}] new progress is the same as previously persisted progress. Skipping storage of progress: {}",
+                        jobId, progress));
                     runnable.run();
                     return;
                 }
@@ -235,7 +245,7 @@ public class DataFrameAnalyticsTask extends AllocatedPersistentTask implements S
                     .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE);
                 try (XContentBuilder jsonBuilder = JsonXContent.contentBuilder()) {
                     LOGGER.debug(() -> new ParameterizedMessage("[{}] Persisting progress is: {}", jobId, progress));
-                    progressToStore.toXContent(jsonBuilder, Payload.XContent.EMPTY_PARAMS);
+                    storedProgress.get().toXContent(jsonBuilder, Payload.XContent.EMPTY_PARAMS);
                     indexRequest.source(jsonBuilder);
                 }
                 executeAsyncWithOrigin(client, ML_ORIGIN, IndexAction.INSTANCE, indexRequest, indexProgressDocListener);
@@ -287,7 +297,7 @@ public class DataFrameAnalyticsTask extends AllocatedPersistentTask implements S
      * {@code FINISHED} means the job had finished.
      */
     public enum StartingState {
-        FIRST_TIME, RESUMING_REINDEXING, RESUMING_ANALYZING, FINISHED
+        FIRST_TIME, RESUMING_REINDEXING, RESUMING_ANALYZING, RESUMING_INFERENCE, FINISHED
     }
 
     public StartingState determineStartingState() {
@@ -312,6 +322,9 @@ public class DataFrameAnalyticsTask extends AllocatedPersistentTask implements S
 
         if (ProgressTracker.REINDEXING.equals(lastIncompletePhase.getPhase())) {
             return lastIncompletePhase.getProgressPercent() == 0 ? StartingState.FIRST_TIME : StartingState.RESUMING_REINDEXING;
+        }
+        if (ProgressTracker.INFERENCE.equals(lastIncompletePhase.getPhase())) {
+            return StartingState.RESUMING_INFERENCE;
         }
         return StartingState.RESUMING_ANALYZING;
     }

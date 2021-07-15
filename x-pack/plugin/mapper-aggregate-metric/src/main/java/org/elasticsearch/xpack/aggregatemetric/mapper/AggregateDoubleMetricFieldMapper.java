@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.aggregatemetric.mapper;
 
@@ -23,17 +24,18 @@ import org.elasticsearch.index.fielddata.ScriptDocValues;
 import org.elasticsearch.index.fielddata.SortedBinaryDocValues;
 import org.elasticsearch.index.fielddata.SortedNumericDoubleValues;
 import org.elasticsearch.index.mapper.ContentPath;
+import org.elasticsearch.index.mapper.DocumentParserContext;
 import org.elasticsearch.index.mapper.FieldMapper;
 import org.elasticsearch.index.mapper.MappedFieldType;
 import org.elasticsearch.index.mapper.Mapper;
 import org.elasticsearch.index.mapper.NumberFieldMapper;
-import org.elasticsearch.index.mapper.ParseContext;
 import org.elasticsearch.index.mapper.SimpleMappedFieldType;
 import org.elasticsearch.index.mapper.SourceValueFetcher;
 import org.elasticsearch.index.mapper.TextSearchInfo;
 import org.elasticsearch.index.mapper.ValueFetcher;
 import org.elasticsearch.index.query.QueryRewriteContext;
 import org.elasticsearch.index.query.SearchExecutionContext;
+import org.elasticsearch.script.ScriptCompiler;
 import org.elasticsearch.search.DocValueFormat;
 import org.elasticsearch.search.MultiValueMode;
 import org.elasticsearch.search.lookup.SearchLookup;
@@ -45,6 +47,7 @@ import org.elasticsearch.xpack.aggregatemetric.fielddata.LeafAggregateDoubleMetr
 
 import java.io.IOException;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -182,9 +185,21 @@ public class AggregateDoubleMetricFieldMapper extends FieldMapper {
 
                 if (m == Metric.value_count) {
                     // value_count metric can only be an integer and not a double
-                    builder = new NumberFieldMapper.Builder(fieldName, NumberFieldMapper.NumberType.INTEGER, false, false);
+                    builder = new NumberFieldMapper.Builder(
+                        fieldName,
+                        NumberFieldMapper.NumberType.INTEGER,
+                        ScriptCompiler.NONE,
+                        false,
+                        false
+                    );
                 } else {
-                    builder = new NumberFieldMapper.Builder(fieldName, NumberFieldMapper.NumberType.DOUBLE, false, true);
+                    builder = new NumberFieldMapper.Builder(
+                        fieldName,
+                        NumberFieldMapper.NumberType.DOUBLE,
+                        ScriptCompiler.NONE,
+                        false,
+                        true
+                    );
                 }
                 NumberFieldMapper fieldMapper = builder.build(context);
                 metricMappers.put(m, fieldMapper);
@@ -210,7 +225,8 @@ public class AggregateDoubleMetricFieldMapper extends FieldMapper {
     }
 
     public static final FieldMapper.TypeParser PARSER = new TypeParser(
-        (n, c) -> new Builder(n, IGNORE_MALFORMED_SETTING.get(c.getSettings()))
+        (n, c) -> new Builder(n, IGNORE_MALFORMED_SETTING.get(c.getSettings())),
+        notInMultiFields(CONTENT_TYPE)
     );
 
     public static final class AggregateDoubleMetricFieldType extends SimpleMappedFieldType {
@@ -290,7 +306,7 @@ public class AggregateDoubleMetricFieldMapper extends FieldMapper {
         }
 
         @Override
-        public Query termsQuery(List<?> values, SearchExecutionContext context) {
+        public Query termsQuery(Collection<?> values, SearchExecutionContext context) {
             return delegateFieldType().termsQuery(values, context);
         }
 
@@ -495,10 +511,7 @@ public class AggregateDoubleMetricFieldMapper extends FieldMapper {
     }
 
     @Override
-    protected void parseCreateField(ParseContext context) throws IOException {
-        if (context.externalValueSet()) {
-            throw new IllegalArgumentException("Field [" + name() + "] of type [" + typeName() + "] can't be used in multi-fields");
-        }
+    protected void parseCreateField(DocumentParserContext context) throws IOException {
 
         context.path().add(simpleName());
         XContentParser.Token token;

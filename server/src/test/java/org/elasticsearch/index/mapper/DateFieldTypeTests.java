@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 package org.elasticsearch.index.mapper;
 
@@ -46,7 +35,6 @@ import org.elasticsearch.index.fielddata.plain.SortedNumericIndexFieldData;
 import org.elasticsearch.index.mapper.DateFieldMapper.DateFieldType;
 import org.elasticsearch.index.mapper.DateFieldMapper.Resolution;
 import org.elasticsearch.index.mapper.MappedFieldType.Relation;
-import org.elasticsearch.index.mapper.ParseContext.Document;
 import org.elasticsearch.index.query.DateRangeIncludingNowQuery;
 import org.elasticsearch.index.query.QueryRewriteContext;
 import org.elasticsearch.index.query.SearchExecutionContext;
@@ -86,7 +74,7 @@ public class DateFieldTypeTests extends FieldTypeTestCase {
 
         Directory dir = newDirectory();
         IndexWriter w = new IndexWriter(dir, new IndexWriterConfig(null));
-        Document doc = new Document();
+        LuceneDocument doc = new LuceneDocument();
         LongPoint field = new LongPoint("my_date", ft.parse("2015-10-12"));
         doc.add(field);
         w.addDocument(doc);
@@ -177,7 +165,7 @@ public class DateFieldTypeTests extends FieldTypeTestCase {
         assertEquals(expected, ft.termQuery(date, context));
 
         MappedFieldType unsearchable = new DateFieldType("field", false, false, true, DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER,
-            Resolution.MILLISECONDS, null, Collections.emptyMap());
+            Resolution.MILLISECONDS, null, null, Collections.emptyMap());
         IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
                 () -> unsearchable.termQuery(date, context));
         assertEquals("Cannot search on field [field] since it is not indexed.", e.getMessage());
@@ -212,7 +200,7 @@ public class DateFieldTypeTests extends FieldTypeTestCase {
             ft.rangeQuery("now", instant2, true, true, null, null, null, context));
 
         MappedFieldType unsearchable = new DateFieldType("field", false, false, true, DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER,
-            Resolution.MILLISECONDS, null, Collections.emptyMap());
+            Resolution.MILLISECONDS, null, null, Collections.emptyMap());
         IllegalArgumentException e = expectThrows(IllegalArgumentException.class,
                 () -> unsearchable.rangeQuery(date1, date2, true, true, null, null, null, context));
         assertEquals("Cannot search on field [field] since it is not indexed.", e.getMessage());
@@ -252,7 +240,7 @@ public class DateFieldTypeTests extends FieldTypeTestCase {
         // Create an index with some docValues
         Directory dir = newDirectory();
         IndexWriter w = new IndexWriter(dir, new IndexWriterConfig(null));
-        Document doc = new Document();
+        LuceneDocument doc = new LuceneDocument();
         NumericDocValuesField docValuesField = new NumericDocValuesField("my_date", 1444608000000L);
         doc.add(docValuesField);
         w.addDocument(doc);
@@ -280,7 +268,7 @@ public class DateFieldTypeTests extends FieldTypeTestCase {
 
     private static DateFieldType fieldType(Resolution resolution, String format, String nullValue) {
         DateFormatter formatter = DateFormatter.forPattern(format);
-        return new DateFieldType("field", true, false, true, formatter, resolution, nullValue, Collections.emptyMap());
+        return new DateFieldType("field", true, false, true, formatter, resolution, nullValue, null, Collections.emptyMap());
     }
 
     public void testFetchSourceValue() throws IOException {

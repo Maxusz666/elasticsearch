@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.index.query;
@@ -546,28 +535,28 @@ public class IntervalQueryBuilderTests extends AbstractQueryTestCase<IntervalQue
         IntervalQueryBuilder builder = (IntervalQueryBuilder) parseQuery(json);
 
         Query expected = new IntervalQuery(TEXT_FIELD_NAME,
-            buildFuzzySource("term", "Term", FuzzyQueryBuilder.DEFAULT_PREFIX_LENGTH, true, Fuzziness.AUTO.asDistance("term")));
+            buildFuzzySource("term", "term", FuzzyQueryBuilder.DEFAULT_PREFIX_LENGTH, true, Fuzziness.AUTO.asDistance("term")));
         assertEquals(expected, builder.toQuery(createSearchExecutionContext()));
 
         String json_with_prefix = "{ \"intervals\" : { \"" + TEXT_FIELD_NAME + "\": { " +
             "\"fuzzy\" : { \"term\" : \"Term\", \"prefix_length\" : 2 } } } }";
         builder = (IntervalQueryBuilder) parseQuery(json_with_prefix);
         expected = new IntervalQuery(TEXT_FIELD_NAME,
-            buildFuzzySource("term", "Term", 2, true, Fuzziness.AUTO.asDistance("term")));
+            buildFuzzySource("term", "term", 2, true, Fuzziness.AUTO.asDistance("term")));
         assertEquals(expected, builder.toQuery(createSearchExecutionContext()));
 
         String json_with_fuzziness = "{ \"intervals\" : { \"" + TEXT_FIELD_NAME + "\": { " +
             "\"fuzzy\" : { \"term\" : \"Term\", \"prefix_length\" : 2, \"fuzziness\" : \"1\" } } } }";
         builder = (IntervalQueryBuilder) parseQuery(json_with_fuzziness);
         expected = new IntervalQuery(TEXT_FIELD_NAME,
-            buildFuzzySource("term", "Term", 2, true, Fuzziness.ONE.asDistance("term")));
+            buildFuzzySource("term", "term", 2, true, Fuzziness.ONE.asDistance("term")));
         assertEquals(expected, builder.toQuery(createSearchExecutionContext()));
 
         String json_no_transpositions = "{ \"intervals\" : { \"" + TEXT_FIELD_NAME + "\": { " +
             "\"fuzzy\" : { \"term\" : \"Term\", \"prefix_length\" : 2, \"transpositions\" : false } } } }";
         builder = (IntervalQueryBuilder) parseQuery(json_no_transpositions);
         expected = new IntervalQuery(TEXT_FIELD_NAME,
-            buildFuzzySource("term", "Term", 2, false, Fuzziness.AUTO.asDistance("term")));
+            buildFuzzySource("term", "term", 2, false, Fuzziness.AUTO.asDistance("term")));
         assertEquals(expected, builder.toQuery(createSearchExecutionContext()));
 
         String json_with_analyzer = "{ \"intervals\" : { \"" + TEXT_FIELD_NAME + "\": { " +
@@ -582,7 +571,7 @@ public class IntervalQueryBuilderTests extends AbstractQueryTestCase<IntervalQue
             "\"use_field\" : \"" + MASKED_FIELD + "\" } } } }";
         builder = (IntervalQueryBuilder) parseQuery(json_with_fixfield);
         expected = new IntervalQuery(TEXT_FIELD_NAME, Intervals.fixField(MASKED_FIELD,
-            buildFuzzySource("term", "Term", 2, true, Fuzziness.ONE.asDistance("term"))));
+            buildFuzzySource("term", "term", 2, true, Fuzziness.ONE.asDistance("term"))));
         assertEquals(expected, builder.toQuery(createSearchExecutionContext()));
 
     }

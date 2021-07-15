@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.ml.job.process.autodetect;
 
@@ -10,7 +11,7 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.CheckedSupplier;
-import org.elasticsearch.common.Nullable;
+import org.elasticsearch.core.Nullable;
 import org.elasticsearch.common.util.concurrent.AbstractRunnable;
 import org.elasticsearch.common.util.concurrent.FutureUtils;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
@@ -37,7 +38,7 @@ import org.elasticsearch.xpack.ml.job.process.autodetect.params.DataLoadParams;
 import org.elasticsearch.xpack.ml.job.process.autodetect.params.FlushJobParams;
 import org.elasticsearch.xpack.ml.job.process.autodetect.params.ForecastParams;
 import org.elasticsearch.xpack.ml.job.process.autodetect.writer.DataToProcessWriter;
-import org.elasticsearch.xpack.ml.job.process.autodetect.writer.DataToProcessWriterFactory;
+import org.elasticsearch.xpack.ml.job.process.autodetect.writer.JsonDataToProcessWriter;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -91,9 +92,8 @@ public class AutodetectCommunicator implements Closeable {
     }
 
     private DataToProcessWriter createProcessWriter(DataDescription dataDescription) {
-        return DataToProcessWriterFactory.create(true, includeTokensField, autodetectProcess,
-                dataDescription, job.getAnalysisConfig(),
-                dataCountsReporter, xContentRegistry);
+        return new JsonDataToProcessWriter(true, includeTokensField, autodetectProcess,
+            dataDescription, job.getAnalysisConfig(), dataCountsReporter, xContentRegistry);
     }
 
     /**
@@ -142,18 +142,11 @@ public class AutodetectCommunicator implements Closeable {
         handler);
     }
 
-    @Override
-    public void close() {
-        close(false, null);
-    }
-
     /**
      * Closes job this communicator is encapsulating.
-     *
-     * @param restart   Whether the job should be restarted by persistent tasks
-     * @param reason    The reason for closing the job
      */
-    public void close(boolean restart, String reason) {
+    @Override
+    public void close() {
         Future<?> future = autodetectWorkerExecutor.submit(() -> {
             checkProcessIsAlive();
             try {
@@ -165,7 +158,7 @@ public class AutodetectCommunicator implements Closeable {
                 }
                 autodetectResultProcessor.awaitCompletion();
             } finally {
-                onFinishHandler.accept(restart ? new ElasticsearchException(reason) : null, true);
+                onFinishHandler.accept(null, true);
             }
             LOGGER.info("[{}] job closed", job.getId());
             return null;
@@ -317,7 +310,7 @@ public class AutodetectCommunicator implements Closeable {
      * Throws an exception if the process has exited
      */
     private void checkProcessIsAlive() {
-        if (!autodetectProcess.isProcessAlive()) {
+        if (autodetectProcess.isProcessAlive() == false) {
             // Don't log here - it just causes double logging when the exception gets logged
             throw new ElasticsearchException("[{}] Unexpected death of autodetect: {}", job.getId(), autodetectProcess.readError());
         }

@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 package org.elasticsearch.percolator;
 
@@ -45,7 +34,6 @@ import org.elasticsearch.Version;
 import org.elasticsearch.action.support.PlainActionFuture;
 import org.elasticsearch.common.ParsingException;
 import org.elasticsearch.common.bytes.BytesReference;
-import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.hash.MurmurHash3;
 import org.elasticsearch.common.io.stream.OutputStreamStreamOutput;
 import org.elasticsearch.common.lucene.search.Queries;
@@ -53,15 +41,18 @@ import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentLocation;
 import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.core.Tuple;
 import org.elasticsearch.index.mapper.BinaryFieldMapper;
 import org.elasticsearch.index.mapper.ContentPath;
+import org.elasticsearch.index.mapper.DocumentParserContext;
 import org.elasticsearch.index.mapper.FieldMapper;
 import org.elasticsearch.index.mapper.KeywordFieldMapper;
+import org.elasticsearch.index.mapper.LuceneDocument;
 import org.elasticsearch.index.mapper.MappedFieldType;
 import org.elasticsearch.index.mapper.Mapper;
 import org.elasticsearch.index.mapper.MapperParsingException;
+import org.elasticsearch.index.mapper.MappingParserContext;
 import org.elasticsearch.index.mapper.NumberFieldMapper;
-import org.elasticsearch.index.mapper.ParseContext;
 import org.elasticsearch.index.mapper.RangeFieldMapper;
 import org.elasticsearch.index.mapper.RangeType;
 import org.elasticsearch.index.mapper.SourceValueFetcher;
@@ -72,9 +63,9 @@ import org.elasticsearch.index.query.BoostingQueryBuilder;
 import org.elasticsearch.index.query.ConstantScoreQueryBuilder;
 import org.elasticsearch.index.query.DisMaxQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.SearchExecutionContext;
 import org.elasticsearch.index.query.QueryShardException;
 import org.elasticsearch.index.query.Rewriteable;
+import org.elasticsearch.index.query.SearchExecutionContext;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
 
 import java.io.ByteArrayOutputStream;
@@ -184,7 +175,7 @@ public class PercolatorFieldMapper extends FieldMapper {
     static class TypeParser implements Mapper.TypeParser {
 
         @Override
-        public Builder parse(String name, Map<String, Object> node, ParserContext parserContext) throws MapperParsingException {
+        public Builder parse(String name, Map<String, Object> node, MappingParserContext parserContext) throws MapperParsingException {
             return new Builder(name, parserContext.searchExecutionContext(), getMapUnmappedFieldAsText(parserContext.getSettings()));
         }
     }
@@ -342,7 +333,7 @@ public class PercolatorFieldMapper extends FieldMapper {
     }
 
     @Override
-    public void parse(ParseContext context) throws IOException {
+    public void parse(DocumentParserContext context) throws IOException {
         SearchExecutionContext searchExecutionContext = this.searchExecutionContext.get();
         if (context.doc().getField(queryBuilderField.name()) != null) {
             // If a percolator query has been defined in an array object then multiple percolator queries
@@ -372,13 +363,12 @@ public class PercolatorFieldMapper extends FieldMapper {
     }
 
     static void createQueryBuilderField(Version indexVersion, BinaryFieldMapper qbField,
-                                        QueryBuilder queryBuilder, ParseContext context) throws IOException {
+                                        QueryBuilder queryBuilder, DocumentParserContext context) throws IOException {
         try (ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
             try (OutputStreamStreamOutput out  = new OutputStreamStreamOutput(stream)) {
                 out.setVersion(indexVersion);
                 out.writeNamedWriteable(queryBuilder);
-                byte[] queryBuilderAsBytes = stream.toByteArray();
-                qbField.parse(context.createExternalValueContext(queryBuilderAsBytes));
+                qbField.indexValue(context, stream.toByteArray());
             }
         }
     }
@@ -391,8 +381,8 @@ public class PercolatorFieldMapper extends FieldMapper {
         INDEXED_KEYWORD.freeze();
     }
 
-    void processQuery(Query query, ParseContext context) {
-        ParseContext.Document doc = context.doc();
+    void processQuery(Query query, DocumentParserContext context) {
+        LuceneDocument doc = context.doc();
         PercolatorFieldType pft = (PercolatorFieldType) this.fieldType();
         QueryAnalyzer.Result result;
         result = QueryAnalyzer.analyze(query);
@@ -425,7 +415,7 @@ public class PercolatorFieldMapper extends FieldMapper {
             doc.add(new Field(extractionResultField.name(), EXTRACTION_PARTIAL, INDEXED_KEYWORD));
         }
 
-        createFieldNamesField(context);
+        context.addToFieldNames(fieldType().name());
         doc.add(new NumericDocValuesField(minimumShouldMatchFieldMapper.name(), result.minimumShouldMatch));
     }
 
@@ -462,7 +452,7 @@ public class PercolatorFieldMapper extends FieldMapper {
     }
 
     @Override
-    protected void parseCreateField(ParseContext context) {
+    protected void parseCreateField(DocumentParserContext context) {
         throw new UnsupportedOperationException("should not be invoked");
     }
 

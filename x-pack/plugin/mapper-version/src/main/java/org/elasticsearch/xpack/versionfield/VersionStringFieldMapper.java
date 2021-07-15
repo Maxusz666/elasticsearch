@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 package org.elasticsearch.xpack.versionfield;
@@ -24,20 +25,20 @@ import org.apache.lucene.util.AttributeSource;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.automaton.ByteRunAutomaton;
 import org.elasticsearch.ElasticsearchException;
-import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.collect.Iterators;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.lucene.BytesRefs;
 import org.elasticsearch.common.lucene.Lucene;
 import org.elasticsearch.common.unit.Fuzziness;
 import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.core.Nullable;
 import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.fielddata.plain.SortedSetOrdinalsIndexFieldData;
 import org.elasticsearch.index.mapper.ContentPath;
+import org.elasticsearch.index.mapper.DocumentParserContext;
 import org.elasticsearch.index.mapper.FieldMapper;
 import org.elasticsearch.index.mapper.MappedFieldType;
 import org.elasticsearch.index.mapper.Mapper;
-import org.elasticsearch.index.mapper.ParseContext;
 import org.elasticsearch.index.mapper.SourceValueFetcher;
 import org.elasticsearch.index.mapper.TermBasedFieldType;
 import org.elasticsearch.index.mapper.TextSearchInfo;
@@ -340,17 +341,13 @@ public class VersionStringFieldMapper extends FieldMapper {
     }
 
     @Override
-    protected void parseCreateField(ParseContext context) throws IOException {
+    protected void parseCreateField(DocumentParserContext context) throws IOException {
         String versionString;
-        if (context.externalValueSet()) {
-            versionString = context.externalValue().toString();
+        XContentParser parser = context.parser();
+        if (parser.currentToken() == XContentParser.Token.VALUE_NULL) {
+            return;
         } else {
-            XContentParser parser = context.parser();
-            if (parser.currentToken() == XContentParser.Token.VALUE_NULL) {
-                return;
-            } else {
-                versionString = parser.textOrNull();
-            }
+            versionString = parser.textOrNull();
         }
 
         if (versionString == null) {

@@ -1,25 +1,15 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 package org.elasticsearch.persistent;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.elasticsearch.Version;
 import org.elasticsearch.action.ActionType;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRequest;
@@ -30,14 +20,16 @@ import org.elasticsearch.client.OriginSettingClient;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.ClusterStateObserver;
 import org.elasticsearch.cluster.service.ClusterService;
-import org.elasticsearch.common.Nullable;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.Nullable;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.node.NodeClosedException;
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata.PersistentTask;
 import org.elasticsearch.tasks.TaskId;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import java.util.function.Predicate;
+
+import static org.elasticsearch.persistent.CompletionPersistentTaskAction.LOCAL_ABORT_AVAILABLE_VERSION;
 
 /**
  * This service is used by persistent tasks and allocated persistent tasks to communicate changes
@@ -76,13 +68,23 @@ public class PersistentTasksService {
     /**
      * Notifies the master node about the completion of a persistent task.
      * <p>
-     * When {@code failure} is {@code null}, the persistent task is considered as successfully completed.
+     * At most one of {@code failure} and {@code localAbortReason} may be
+     * provided. When both {@code failure} and {@code localAbortReason} are
+     * {@code null}, the persistent task is considered as successfully completed.
+     * {@code localAbortReason} must not be provided unless all nodes in the cluster
+     * are on version {@link CompletionPersistentTaskAction#LOCAL_ABORT_AVAILABLE_VERSION}
+     * or higher.
      */
     public void sendCompletionRequest(final String taskId,
                                       final long taskAllocationId,
                                       final @Nullable Exception taskFailure,
+                                      final @Nullable String localAbortReason,
                                       final ActionListener<PersistentTask<?>> listener) {
-        CompletionPersistentTaskAction.Request request = new CompletionPersistentTaskAction.Request(taskId, taskAllocationId, taskFailure);
+        if (localAbortReason != null) {
+            validateLocalAbortSupported();
+        }
+        CompletionPersistentTaskAction.Request request =
+            new CompletionPersistentTaskAction.Request(taskId, taskAllocationId, taskFailure, localAbortReason);
         execute(request, CompletionPersistentTaskAction.INSTANCE, listener);
     }
 
@@ -121,6 +123,27 @@ public class PersistentTasksService {
     public void sendRemoveRequest(final String taskId, final ActionListener<PersistentTask<?>> listener) {
         RemovePersistentTaskAction.Request request = new RemovePersistentTaskAction.Request(taskId);
         execute(request, RemovePersistentTaskAction.INSTANCE, listener);
+    }
+
+    /**
+     * Is the cluster able to support locally aborting persistent tasks?
+     * This requires that every node in the cluster is on version
+     * {@link CompletionPersistentTaskAction#LOCAL_ABORT_AVAILABLE_VERSION}
+     * or above.
+     */
+    public boolean isLocalAbortSupported() {
+        return clusterService.state().nodes().getMinNodeVersion().onOrAfter(LOCAL_ABORT_AVAILABLE_VERSION);
+    }
+
+    /**
+     * Throw an exception if the cluster is not able locally abort persistent tasks.
+     */
+    public void validateLocalAbortSupported() {
+        Version minNodeVersion = clusterService.state().nodes().getMinNodeVersion();
+        if (minNodeVersion.before(LOCAL_ABORT_AVAILABLE_VERSION)) {
+            throw new IllegalStateException("attempt to abort a persistent task locally in a cluster that does not support this: "
+                + "minimum node version [" + minNodeVersion + "], version required [" + LOCAL_ABORT_AVAILABLE_VERSION + "]");
+        }
     }
 
     /**

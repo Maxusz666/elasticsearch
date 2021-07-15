@@ -1,25 +1,14 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 package org.elasticsearch.search.aggregations.bucket;
 
 import org.apache.lucene.index.LeafReaderContext;
-import org.elasticsearch.common.lease.Releasable;
+import org.elasticsearch.core.Releasable;
 import org.elasticsearch.common.util.LongArray;
 import org.elasticsearch.search.aggregations.AggregationExecutionException;
 import org.elasticsearch.search.aggregations.Aggregator;
@@ -151,7 +140,7 @@ public abstract class BucketsAggregator extends AggregatorBase {
     /**
      * Hook to allow taking an action before building the sub agg results.
      */
-    protected void prepareSubAggs(long[] bucketOrdsToCollect) throws IOException {}
+    protected void prepareSubAggs(long[] ordsToCollect) throws IOException {}
 
     /**
      * Build the results of the sub-aggregations of the buckets at each of
@@ -174,10 +163,6 @@ public abstract class BucketsAggregator extends AggregatorBase {
         }
         InternalAggregations[] result = new InternalAggregations[bucketOrdsToCollect.length];
         for (int ord = 0; ord < bucketOrdsToCollect.length; ord++) {
-            InternalAggregation[] slice = new InternalAggregation[subAggregators.length];
-            for (int i = 0; i < subAggregators.length; i++) {
-                slice[i] = aggregations[i][ord];
-            }
             final int thisOrd = ord;
             result[ord] = InternalAggregations.from(new AbstractList<InternalAggregation>() {
                 @Override
@@ -312,8 +297,11 @@ public abstract class BucketsAggregator extends AggregatorBase {
     protected final <B> InternalAggregation[] buildAggregationsForVariableBuckets(long[] owningBucketOrds, LongKeyedBucketOrds bucketOrds,
             BucketBuilderForVariable<B> bucketBuilder, ResultBuilderForVariable<B> resultBuilder) throws IOException {
         long totalOrdsToCollect = 0;
+        final int[] bucketsInOrd = new int[owningBucketOrds.length];
         for (int ordIdx = 0; ordIdx < owningBucketOrds.length; ordIdx++) {
-            totalOrdsToCollect += bucketOrds.bucketsInOrd(owningBucketOrds[ordIdx]);
+            final long bucketCount = bucketOrds.bucketsInOrd(owningBucketOrds[ordIdx]);
+            bucketsInOrd[ordIdx] = (int) bucketCount;
+            totalOrdsToCollect += bucketCount;
         }
         if (totalOrdsToCollect > Integer.MAX_VALUE) {
             throw new AggregationExecutionException("Can't collect more than [" + Integer.MAX_VALUE
@@ -332,7 +320,7 @@ public abstract class BucketsAggregator extends AggregatorBase {
         InternalAggregation[] results = new InternalAggregation[owningBucketOrds.length];
         b = 0;
         for (int ordIdx = 0; ordIdx < owningBucketOrds.length; ordIdx++) {
-            List<B> buckets = new ArrayList<>((int) bucketOrds.size());
+            List<B> buckets = new ArrayList<>(bucketsInOrd[ordIdx]);
             LongKeyedBucketOrds.BucketOrdsEnum ordsEnum = bucketOrds.ordsEnum(owningBucketOrds[ordIdx]);
             while(ordsEnum.next()) {
                 if (bucketOrdsToCollect[b] != ordsEnum.ord()) {

@@ -1,12 +1,13 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 package org.elasticsearch.fs.quotaaware;
 
-import org.elasticsearch.common.SuppressForbidden;
+import org.elasticsearch.core.SuppressForbidden;
 
 import java.io.IOException;
 import java.nio.file.FileStore;
@@ -118,8 +119,8 @@ public final class QuotaAwareFileSystem extends FileSystem {
         if (obj == null) return false;
         if (getClass() != obj.getClass()) return false;
         QuotaAwareFileSystem other = (QuotaAwareFileSystem) obj;
-        if (!delegate.equals(other.delegate)) return false;
-        if (!provider.equals(other.provider)) return false;
+        if (delegate.equals(other.delegate) == false) return false;
+        if (provider.equals(other.provider) == false) return false;
         return true;
     }
 

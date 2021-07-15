@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 package org.elasticsearch.repositories.gcs;
 
@@ -25,15 +14,16 @@ import com.google.cloud.storage.StorageOptions;
 import com.sun.net.httpserver.HttpHandler;
 import fixture.gcs.FakeOAuth2HttpHandler;
 import org.apache.http.HttpStatus;
-import org.elasticsearch.common.Nullable;
+import org.elasticsearch.common.util.BigArrays;
+import org.elasticsearch.core.Nullable;
 import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.SuppressForbidden;
+import org.elasticsearch.core.SuppressForbidden;
 import org.elasticsearch.common.UUIDs;
 import org.elasticsearch.common.blobstore.BlobContainer;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
-import org.elasticsearch.common.collect.Tuple;
+import org.elasticsearch.core.Tuple;
 import org.elasticsearch.common.io.Streams;
 import org.elasticsearch.common.lucene.store.ByteArrayIndexInput;
 import org.elasticsearch.common.lucene.store.InputStreamIndexInput;
@@ -41,7 +31,7 @@ import org.elasticsearch.common.network.InetAddresses;
 import org.elasticsearch.common.settings.MockSecureSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.ByteSizeValue;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.common.util.concurrent.CountDown;
 import org.elasticsearch.repositories.blobstore.AbstractBlobContainerRetriesTestCase;
 import org.elasticsearch.repositories.blobstore.ESMockAPIBasedRepositoryIntegTestCase;
@@ -151,9 +141,9 @@ public class GoogleCloudStorageBlobContainerRetriesTests extends AbstractBlobCon
 
         httpServer.createContext("/token", new FakeOAuth2HttpHandler());
         final GoogleCloudStorageBlobStore blobStore = new GoogleCloudStorageBlobStore("bucket", client, "repo", service,
-            randomIntBetween(1, 8) * 1024);
+            BigArrays.NON_RECYCLING_INSTANCE, randomIntBetween(1, 8) * 1024);
 
-        return new GoogleCloudStorageBlobContainer(BlobPath.cleanPath(), blobStore);
+        return new GoogleCloudStorageBlobContainer(BlobPath.EMPTY, blobStore);
     }
 
     public void testReadLargeBlobWithRetries() throws Exception {
@@ -266,6 +256,7 @@ public class GoogleCloudStorageBlobContainerRetriesTests extends AbstractBlobCon
         final AtomicInteger countUploads = new AtomicInteger(nbErrors * totalChunks);
         final AtomicBoolean allow410Gone = new AtomicBoolean(randomBoolean());
         final AtomicBoolean allowReadTimeout = new AtomicBoolean(rarely());
+        final AtomicInteger bytesReceived = new AtomicInteger();
         final int wrongChunk = randomIntBetween(1, totalChunks);
 
         final AtomicReference<String> sessionUploadId = new AtomicReference<>(UUIDs.randomBase64UUID());
@@ -316,6 +307,7 @@ public class GoogleCloudStorageBlobContainerRetriesTests extends AbstractBlobCon
                         // we must reset the counters because the whole object upload will be retried
                         countInits.set(nbErrors);
                         countUploads.set(nbErrors * totalChunks);
+                        bytesReceived.set(0);
 
                         exchange.sendResponseHeaders(HttpStatus.SC_GONE, -1);
                         return;
@@ -325,13 +317,25 @@ public class GoogleCloudStorageBlobContainerRetriesTests extends AbstractBlobCon
                 final String range = exchange.getRequestHeaders().getFirst("Content-Range");
                 assertTrue(Strings.hasLength(range));
 
+                if (range.equals("bytes */*")) {
+                    final int receivedSoFar = bytesReceived.get();
+                    if (receivedSoFar > 0) {
+                        exchange.getResponseHeaders().add("Range", String.format(Locale.ROOT, "bytes=0-%d", receivedSoFar));
+                    }
+                    exchange.getResponseHeaders().add("Content-Length", "0");
+                    exchange.sendResponseHeaders(308 /* Resume Incomplete */, -1);
+                    return;
+                }
+
                 if (countUploads.decrementAndGet() % 2 == 0) {
+
                     assertThat(Math.toIntExact(requestBody.length()), anyOf(equalTo(defaultChunkSize), equalTo(lastChunkSize)));
 
                     final int rangeStart = getContentRangeStart(range);
                     final int rangeEnd = getContentRangeEnd(range);
                     assertThat(rangeEnd + 1 - rangeStart, equalTo(Math.toIntExact(requestBody.length())));
                     assertThat(new BytesArray(data, rangeStart, rangeEnd - rangeStart + 1), is(requestBody));
+                    bytesReceived.updateAndGet(existing -> Math.max(existing, rangeEnd));
 
                     final Integer limit = getContentRangeLimit(range);
                     if (limit != null) {
@@ -354,8 +358,12 @@ public class GoogleCloudStorageBlobContainerRetriesTests extends AbstractBlobCon
         final TimeValue readTimeout = allowReadTimeout.get() ? TimeValue.timeValueSeconds(3) : null;
 
         final BlobContainer blobContainer = createBlobContainer(nbErrors + 1, readTimeout, null, null);
-        try (InputStream stream = new InputStreamIndexInput(new ByteArrayIndexInput("desc", data), data.length)) {
-            blobContainer.writeBlob("write_large_blob", stream, data.length, false);
+        if (randomBoolean()) {
+            try (InputStream stream = new InputStreamIndexInput(new ByteArrayIndexInput("desc", data), data.length)) {
+                blobContainer.writeBlob("write_large_blob", stream, data.length, false);
+            }
+        } else {
+            blobContainer.writeBlob("write_large_blob", false, randomBoolean(), out -> out.write(data));
         }
 
         assertThat(countInits.get(), equalTo(0));

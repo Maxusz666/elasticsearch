@@ -1,25 +1,13 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.repositories;
 
-import org.apache.lucene.index.IndexCommit;
 import org.elasticsearch.Version;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.admin.cluster.repositories.put.PutRepositoryRequest;
@@ -43,7 +31,6 @@ import org.elasticsearch.common.component.LifecycleListener;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.MockBigArrays;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
-import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.index.snapshots.IndexShardSnapshotStatus;
 import org.elasticsearch.index.store.Store;
@@ -76,20 +63,35 @@ public class RepositoriesServiceTests extends ESTestCase {
     public void setUp() throws Exception {
         super.setUp();
         ThreadPool threadPool = mock(ThreadPool.class);
-        final TransportService transportService = new TransportService(Settings.EMPTY, mock(Transport.class), threadPool,
+        final TransportService transportService = new TransportService(
+            Settings.EMPTY,
+            mock(Transport.class),
+            threadPool,
             TransportService.NOOP_TRANSPORT_INTERCEPTOR,
-            boundAddress -> DiscoveryNode.createLocal(Settings.EMPTY, boundAddress.publishAddress(), UUIDs.randomBase64UUID()), null,
-            Collections.emptySet());
+            boundAddress -> DiscoveryNode.createLocal(Settings.EMPTY, boundAddress.publishAddress(), UUIDs.randomBase64UUID()),
+            null,
+            Collections.emptySet()
+        );
         final ClusterApplierService clusterApplierService = mock(ClusterApplierService.class);
         when(clusterApplierService.threadPool()).thenReturn(threadPool);
         final ClusterService clusterService = mock(ClusterService.class);
         when(clusterService.getClusterApplierService()).thenReturn(clusterApplierService);
-        Map<String, Repository.Factory> typesRegistry =
-            Map.of(TestRepository.TYPE, TestRepository::new,
-                MeteredRepositoryTypeA.TYPE, metadata -> new MeteredRepositoryTypeA(metadata, clusterService),
-                MeteredRepositoryTypeB.TYPE, metadata -> new MeteredRepositoryTypeB(metadata, clusterService));
-        repositoriesService = new RepositoriesService(Settings.EMPTY, mock(ClusterService.class),
-            transportService, typesRegistry, typesRegistry, threadPool);
+        Map<String, Repository.Factory> typesRegistry = Map.of(
+            TestRepository.TYPE,
+            TestRepository::new,
+            MeteredRepositoryTypeA.TYPE,
+            metadata -> new MeteredRepositoryTypeA(metadata, clusterService),
+            MeteredRepositoryTypeB.TYPE,
+            metadata -> new MeteredRepositoryTypeB(metadata, clusterService)
+        );
+        repositoriesService = new RepositoriesService(
+            Settings.EMPTY,
+            mock(ClusterService.class),
+            transportService,
+            typesRegistry,
+            typesRegistry,
+            threadPool
+        );
         repositoriesService.start();
     }
 
@@ -164,8 +166,10 @@ public class RepositoriesServiceTests extends ESTestCase {
     private ClusterState createClusterStateWithRepo(String repoName, String repoType) {
         ClusterState.Builder state = ClusterState.builder(new ClusterName("test"));
         Metadata.Builder mdBuilder = Metadata.builder();
-        mdBuilder.putCustom(RepositoriesMetadata.TYPE,
-            new RepositoriesMetadata(Collections.singletonList(new RepositoryMetadata(repoName, repoType, Settings.EMPTY))));
+        mdBuilder.putCustom(
+            RepositoriesMetadata.TYPE,
+            new RepositoriesMetadata(Collections.singletonList(new RepositoryMetadata(repoName, repoType, Settings.EMPTY)))
+        );
         state.metadata(mdBuilder);
 
         return state.build();
@@ -198,8 +202,8 @@ public class RepositoriesServiceTests extends ESTestCase {
         }
 
         @Override
-        public SnapshotInfo getSnapshotInfo(SnapshotId snapshotId) {
-            return null;
+        public void getSnapshotInfo(GetSnapshotInfoContext context) {
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -218,16 +222,25 @@ public class RepositoriesServiceTests extends ESTestCase {
         }
 
         @Override
-        public void finalizeSnapshot(ShardGenerations shardGenerations, long repositoryStateId, Metadata clusterMetadata,
-                                     SnapshotInfo snapshotInfo, Version repositoryMetaVersion,
-                                     Function<ClusterState, ClusterState> stateTransformer,
-                                     ActionListener<RepositoryData> listener) {
+        public void finalizeSnapshot(
+            ShardGenerations shardGenerations,
+            long repositoryStateId,
+            Metadata clusterMetadata,
+            SnapshotInfo snapshotInfo,
+            Version repositoryMetaVersion,
+            Function<ClusterState, ClusterState> stateTransformer,
+            ActionListener<RepositoryData> listener
+        ) {
             listener.onResponse(null);
         }
 
         @Override
-        public void deleteSnapshots(Collection<SnapshotId> snapshotIds, long repositoryStateId, Version repositoryMetaVersion,
-                                    ActionListener<RepositoryData> listener) {
+        public void deleteSnapshots(
+            Collection<SnapshotId> snapshotIds,
+            long repositoryStateId,
+            Version repositoryMetaVersion,
+            ActionListener<RepositoryData> listener
+        ) {
             listener.onResponse(null);
         }
 
@@ -262,15 +275,19 @@ public class RepositoriesServiceTests extends ESTestCase {
         }
 
         @Override
-        public void snapshotShard(Store store, MapperService mapperService, SnapshotId snapshotId, IndexId indexId,
-                                  IndexCommit snapshotIndexCommit, String shardStateIdentifier, IndexShardSnapshotStatus snapshotStatus,
-                                  Version repositoryMetaVersion, Map<String, Object> userMetadata, ActionListener<String> listener) {
+        public void snapshotShard(SnapshotShardContext context) {
 
         }
 
         @Override
-        public void restoreShard(Store store, SnapshotId snapshotId, IndexId indexId, ShardId snapshotShardId,
-                                 RecoveryState recoveryState, ActionListener<Void> listener) {
+        public void restoreShard(
+            Store store,
+            SnapshotId snapshotId,
+            IndexId indexId,
+            ShardId snapshotShardId,
+            RecoveryState recoveryState,
+            ActionListener<Void> listener
+        ) {
 
         }
 
@@ -280,17 +297,23 @@ public class RepositoriesServiceTests extends ESTestCase {
         }
 
         @Override
-        public void updateState(final ClusterState state) {
-        }
+        public void updateState(final ClusterState state) {}
 
         @Override
-        public void executeConsistentStateUpdate(Function<RepositoryData, ClusterStateUpdateTask> createUpdateTask, String source,
-                                                 Consumer<Exception> onFailure) {
-        }
+        public void executeConsistentStateUpdate(
+            Function<RepositoryData, ClusterStateUpdateTask> createUpdateTask,
+            String source,
+            Consumer<Exception> onFailure
+        ) {}
 
         @Override
-        public void cloneShardSnapshot(SnapshotId source, SnapshotId target, RepositoryShardId shardId, String shardGeneration,
-                                       ActionListener<String> listener) {
+        public void cloneShardSnapshot(
+            SnapshotId source,
+            SnapshotId target,
+            RepositoryShardId shardId,
+            String shardGeneration,
+            ActionListener<ShardSnapshotResult> listener
+        ) {
 
         }
 
@@ -330,13 +353,15 @@ public class RepositoriesServiceTests extends ESTestCase {
         private static final RepositoryStats STATS = new RepositoryStats(Map.of("GET", 10L));
 
         private MeteredRepositoryTypeA(RepositoryMetadata metadata, ClusterService clusterService) {
-            super(metadata,
+            super(
+                metadata,
                 mock(NamedXContentRegistry.class),
                 clusterService,
                 MockBigArrays.NON_RECYCLING_INSTANCE,
                 mock(RecoverySettings.class),
-                BlobPath.cleanPath(),
-                Map.of("bucket", "bucket-a"));
+                BlobPath.EMPTY,
+                Map.of("bucket", "bucket-a")
+            );
         }
 
         @Override
@@ -355,13 +380,15 @@ public class RepositoriesServiceTests extends ESTestCase {
         private static final RepositoryStats STATS = new RepositoryStats(Map.of("LIST", 20L));
 
         private MeteredRepositoryTypeB(RepositoryMetadata metadata, ClusterService clusterService) {
-            super(metadata,
+            super(
+                metadata,
                 mock(NamedXContentRegistry.class),
                 clusterService,
                 MockBigArrays.NON_RECYCLING_INSTANCE,
                 mock(RecoverySettings.class),
-                BlobPath.cleanPath(),
-                Map.of("bucket", "bucket-b"));
+                BlobPath.EMPTY,
+                Map.of("bucket", "bucket-b")
+            );
         }
 
         @Override

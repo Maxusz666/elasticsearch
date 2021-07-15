@@ -1,23 +1,13 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 package org.elasticsearch.persistent;
 
+import org.elasticsearch.Version;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.ActionType;
@@ -52,6 +42,8 @@ public class CompletionPersistentTaskAction extends ActionType<PersistentTaskRes
     public static final CompletionPersistentTaskAction INSTANCE = new CompletionPersistentTaskAction();
     public static final String NAME = "cluster:admin/persistent/completion";
 
+    public static final Version LOCAL_ABORT_AVAILABLE_VERSION = Version.V_7_15_0;
+
     private CompletionPersistentTaskAction() {
         super(NAME, PersistentTaskResponse::new);
     }
@@ -64,6 +56,8 @@ public class CompletionPersistentTaskAction extends ActionType<PersistentTaskRes
 
         private long allocationId = -1;
 
+        private String localAbortReason;
+
         public Request() {}
 
         public Request(StreamInput in) throws IOException {
@@ -71,20 +65,37 @@ public class CompletionPersistentTaskAction extends ActionType<PersistentTaskRes
             taskId = in.readString();
             allocationId = in.readLong();
             exception = in.readException();
+            if (in.getVersion().onOrAfter(LOCAL_ABORT_AVAILABLE_VERSION)) {
+                localAbortReason = in.readOptionalString();
+            }
         }
 
-        public Request(String taskId, long allocationId, Exception exception) {
+        public Request(String taskId, long allocationId, Exception exception, String localAbortReason) {
             this.taskId = taskId;
             this.exception = exception;
             this.allocationId = allocationId;
+            this.localAbortReason = localAbortReason;
         }
 
         @Override
         public void writeTo(StreamOutput out) throws IOException {
+            if (localAbortReason != null && out.getVersion().before(LOCAL_ABORT_AVAILABLE_VERSION)) {
+                // This case cannot be handled by simply not serializing the new field, as the
+                // old master node would then treat it as a signal that the task should NOT be
+                // reassigned to a different node, i.e. completely different semantics. We
+                // should never get here in reality, as this action is for internal use only
+                // (it has no REST layer) and the places where it's called defend against this
+                // situation.
+                throw new IllegalArgumentException("attempt to abort a persistent task locally in a cluster that contains a node that is "
+                    + "too old: found node version [" + out.getVersion() + "], minimum required [" + LOCAL_ABORT_AVAILABLE_VERSION + "]");
+            }
             super.writeTo(out);
             out.writeString(taskId);
             out.writeLong(allocationId);
             out.writeException(exception);
+            if (out.getVersion().onOrAfter(LOCAL_ABORT_AVAILABLE_VERSION)) {
+                out.writeOptionalString(localAbortReason);
+            }
         }
 
         @Override
@@ -96,6 +107,9 @@ public class CompletionPersistentTaskAction extends ActionType<PersistentTaskRes
             if (allocationId < 0) {
                 validationException = addValidationError("allocation id is negative or missing", validationException);
             }
+            if (exception != null && localAbortReason != null) {
+                validationException = addValidationError("task cannot be both locally aborted and failed", validationException);
+            }
             return validationException;
         }
 
@@ -106,12 +120,13 @@ public class CompletionPersistentTaskAction extends ActionType<PersistentTaskRes
             Request request = (Request) o;
             return Objects.equals(taskId, request.taskId) &&
                     allocationId == request.allocationId &&
-                    Objects.equals(exception, request.exception);
+                    Objects.equals(exception, request.exception) &&
+                    Objects.equals(localAbortReason, request.localAbortReason);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(taskId, allocationId, exception);
+            return Objects.hash(taskId, allocationId, exception, localAbortReason);
         }
     }
 
@@ -146,8 +161,15 @@ public class CompletionPersistentTaskAction extends ActionType<PersistentTaskRes
         @Override
         protected final void masterOperation(Task ignoredTask, final Request request, ClusterState state,
                                              final ActionListener<PersistentTaskResponse> listener) {
-            persistentTasksClusterService.completePersistentTask(request.taskId, request.allocationId, request.exception,
+            if (request.localAbortReason != null) {
+                assert request.exception == null
+                    : "request has both exception " + request.exception + " and local abort reason " + request.localAbortReason;
+                persistentTasksClusterService.unassignPersistentTask(request.taskId, request.allocationId, request.localAbortReason,
                     listener.map(PersistentTaskResponse::new));
+            } else {
+                persistentTasksClusterService.completePersistentTask(request.taskId, request.allocationId, request.exception,
+                    listener.map(PersistentTaskResponse::new));
+            }
         }
     }
 }

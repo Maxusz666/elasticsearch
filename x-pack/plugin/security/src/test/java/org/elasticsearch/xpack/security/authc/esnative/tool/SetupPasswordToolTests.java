@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.security.authc.esnative.tool;
 
@@ -10,7 +11,7 @@ import org.elasticsearch.cli.Command;
 import org.elasticsearch.cli.CommandTestCase;
 import org.elasticsearch.cli.ExitCodes;
 import org.elasticsearch.cli.UserException;
-import org.elasticsearch.common.CheckedFunction;
+import org.elasticsearch.core.CheckedFunction;
 import org.elasticsearch.common.CheckedSupplier;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.collect.MapBuilder;
@@ -30,7 +31,9 @@ import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.xpack.core.security.support.Validation;
 import org.elasticsearch.xpack.core.security.user.ElasticUser;
 import org.elasticsearch.xpack.security.authc.esnative.ReservedRealm;
-import org.elasticsearch.xpack.security.authc.esnative.tool.HttpResponse.HttpResponseBuilder;
+import org.elasticsearch.xpack.security.tool.HttpResponse;
+import org.elasticsearch.xpack.security.tool.HttpResponse.HttpResponseBuilder;
+import org.elasticsearch.xpack.security.tool.CommandLineHttpClient;
 import org.hamcrest.Matchers;
 import org.junit.Before;
 import org.junit.Rule;

@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 package org.elasticsearch.xpack.core.security.authz.accesscontrol;
@@ -27,7 +28,7 @@ import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.FixedBitSet;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.CheckedBiConsumer;
-import org.elasticsearch.common.CheckedConsumer;
+import org.elasticsearch.core.CheckedConsumer;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.IndexSettings;
@@ -597,7 +598,7 @@ public class DocumentSubsetBitsetCacheTests extends ESTestCase {
             types.add(new MockFieldMapper(new KeywordFieldMapper.KeywordFieldType("dne-" + i)));
         }
 
-        MappingLookup mappingLookup = new MappingLookup(Mapping.EMPTY, types, emptyList(), emptyList(), null, null, null);
+        MappingLookup mappingLookup = MappingLookup.fromMappers(Mapping.EMPTY, types, emptyList(), emptyList());
 
         final Client client = mock(Client.class);
         when(client.settings()).thenReturn(Settings.EMPTY);

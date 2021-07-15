@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.search.aggregations.bucket.composite;
@@ -22,15 +11,17 @@ package org.elasticsearch.search.aggregations.bucket.composite;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.CollectionTerminatedException;
 import org.apache.lucene.util.PriorityQueue;
-import org.elasticsearch.common.lease.Releasable;
-import org.elasticsearch.common.lease.Releasables;
+import org.elasticsearch.core.Releasable;
+import org.elasticsearch.core.Releasables;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.util.LongArray;
 import org.elasticsearch.search.aggregations.LeafBucketCollector;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * A specialized {@link PriorityQueue} implementation for composite buckets.
@@ -67,28 +58,37 @@ final class CompositeValuesCollectorQueue extends PriorityQueue<Integer> impleme
 
     private LongArray docCounts;
     private boolean afterKeyIsSet = false;
+    private int leafReaderOrd = -1; // current LeafReaderContext ordinal
 
     /**
      * Constructs a composite queue with the specified size and sources.
      *
      * @param sources The list of {@link CompositeValuesSourceConfig} to build the composite buckets.
      * @param size The number of composite buckets to keep.
-     * @param afterKey composite key
      */
-    CompositeValuesCollectorQueue(BigArrays bigArrays, SingleDimensionValuesSource<?>[] sources, int size, CompositeKey afterKey) {
+    CompositeValuesCollectorQueue(BigArrays bigArrays, SingleDimensionValuesSource<?>[] sources, int size) {
         super(size);
         this.bigArrays = bigArrays;
         this.maxSize = size;
         this.arrays = sources;
         this.map = new HashMap<>(size);
-        if (afterKey != null) {
-            assert afterKey.size() == sources.length;
-            afterKeyIsSet = true;
-            for (int i = 0; i < afterKey.size(); i++) {
-                sources[i].setAfter(afterKey.get(i));
+        this.docCounts = bigArrays.newLongArray(1, false);
+    }
+
+    /**
+     * Sets after key
+     * @param afterKey composite key
+     */
+    public void setAfterKey(CompositeKey afterKey) {
+        assert afterKey.size() == arrays.length;
+        afterKeyIsSet = true;
+        for (int i = 0; i < afterKey.size(); i++) {
+            try {
+                arrays[i].setAfter(afterKey.get(i));
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("incompatible value in the position " + i + ": " + ex.getMessage(), ex);
             }
         }
-        this.docCounts = bigArrays.newLongArray(1, false);
     }
 
     @Override
@@ -233,14 +233,26 @@ final class CompositeValuesCollectorQueue extends PriorityQueue<Integer> impleme
                                          LeafReaderContext context, LeafBucketCollector in) throws IOException {
         int last = arrays.length - 1;
         LeafBucketCollector collector = in;
+        boolean requiresRehashingWhenSwitchingLeafReaders = false;
         while (last > 0) {
-            collector = arrays[last--].getLeafCollector(context, collector);
+            SingleDimensionValuesSource<?> valuesSource = arrays[last--];
+            requiresRehashingWhenSwitchingLeafReaders |= valuesSource.requiresRehashingWhenSwitchingLeafReaders();
+            collector = valuesSource.getLeafCollector(context, collector);
         }
+        SingleDimensionValuesSource<?> valuesSource = arrays[last];
+        requiresRehashingWhenSwitchingLeafReaders |= valuesSource.requiresRehashingWhenSwitchingLeafReaders();
         if (forceLeadSourceValue != null) {
-            collector = arrays[last].getLeafCollector(forceLeadSourceValue, context, collector);
+            collector = valuesSource.getLeafCollector(forceLeadSourceValue, context, collector);
         } else {
-            collector = arrays[last].getLeafCollector(context, collector);
+            collector = valuesSource.getLeafCollector(context, collector);
         }
+        boolean switchedLeafReaders = context.ord != leafReaderOrd;
+        if (map.isEmpty() == false && requiresRehashingWhenSwitchingLeafReaders && switchedLeafReaders) {
+            List<Map.Entry<Slot, Integer>> entries = map.entrySet().stream().collect(Collectors.toList());
+            map.clear();
+            entries.forEach(e -> map.put(e.getKey(), e.getValue()));
+        }
+        leafReaderOrd = context.ord;
         return collector;
     }
 

@@ -1,14 +1,15 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 package org.elasticsearch.fs.quotaaware;
 
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestRuleLimitSysouts.Limit;
-import org.elasticsearch.common.SuppressForbidden;
+import org.elasticsearch.core.SuppressForbidden;
 
 import java.io.File;
 import java.io.IOException;
@@ -85,6 +86,7 @@ public class QuotaAwareFileSystemProviderTests extends LuceneTestCase {
         }
     }
 
+    @AwaitsFix(bugUrl = "https://github.com/elastic/elasticsearch/issues/70680")
     public void testRepeatedUpdate() throws Exception {
         Path quotaFile = createTempDir().resolve("quota.properties");
         FileSystemProvider systemProvider = quotaFile.getFileSystem().provider();

@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.http;
@@ -26,7 +15,6 @@ import org.elasticsearch.action.support.PlainActionFuture;
 import org.elasticsearch.client.Cancellable;
 import org.elasticsearch.client.Request;
 import org.elasticsearch.client.Response;
-import org.elasticsearch.client.ResponseListener;
 import org.elasticsearch.cluster.AbstractDiffable;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.ClusterStateUpdateTask;
@@ -43,6 +31,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.function.UnaryOperator;
+
+import static org.elasticsearch.action.support.ActionTestUtils.wrapAsRestResponseListener;
+import static org.elasticsearch.test.TaskAssertions.awaitTaskWithPrefix;
 
 public class ClusterStateRestCancellationIT extends HttpSmokeTestCase {
 
@@ -80,26 +71,15 @@ public class ClusterStateRestCancellationIT extends HttpSmokeTestCase {
         final Request clusterStateRequest = new Request(HttpGet.METHOD_NAME, "/_cluster/state");
         clusterStateRequest.addParameter("wait_for_metadata_version", Long.toString(Long.MAX_VALUE));
         clusterStateRequest.addParameter("wait_for_timeout", "1h");
+        if (randomBoolean()) {
+            clusterStateRequest.addParameter("local", "true");
+        }
 
-        final PlainActionFuture<Void> future = new PlainActionFuture<>();
+        final PlainActionFuture<Response> future = new PlainActionFuture<>();
         logger.info("--> sending cluster state request");
-        final Cancellable cancellable = getRestClient().performRequestAsync(clusterStateRequest, new ResponseListener() {
-            @Override
-            public void onSuccess(Response response) {
-                future.onResponse(null);
-            }
+        final Cancellable cancellable = getRestClient().performRequestAsync(clusterStateRequest, wrapAsRestResponseListener(future));
 
-            @Override
-            public void onFailure(Exception exception) {
-                future.onFailure(exception);
-            }
-        });
-
-        logger.info("--> waiting for task to start");
-        assertBusy(() -> {
-            final List<TaskInfo> tasks = client().admin().cluster().prepareListTasks().get().getTasks();
-            assertTrue(tasks.toString(), tasks.stream().anyMatch(t -> t.getAction().equals(ClusterStateAction.NAME)));
-        });
+        awaitTaskWithPrefix(ClusterStateAction.NAME);
 
         logger.info("--> cancelling cluster state request");
         cancellable.cancel();

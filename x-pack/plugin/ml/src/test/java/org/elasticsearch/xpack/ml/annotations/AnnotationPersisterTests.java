@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.ml.annotations;
 
@@ -17,7 +18,7 @@ import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.OriginSettingClient;
 import org.elasticsearch.common.bytes.BytesReference;
-import org.elasticsearch.common.collect.Tuple;
+import org.elasticsearch.core.Tuple;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.common.xcontent.XContentParser;
@@ -39,7 +40,7 @@ import org.mockito.stubbing.Answer;
 import java.io.IOException;
 import java.util.List;
 
-import static org.elasticsearch.common.collect.Tuple.tuple;
+import static org.elasticsearch.core.Tuple.tuple;
 import static org.elasticsearch.common.xcontent.json.JsonXContent.jsonXContent;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;

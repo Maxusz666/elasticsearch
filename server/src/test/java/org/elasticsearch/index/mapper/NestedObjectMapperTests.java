@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.index.mapper;
@@ -423,6 +412,44 @@ public class NestedObjectMapperTests extends MapperServiceTestCase {
         assertThat(fields.size(), equalTo(new HashSet<>(fields).size()));
     }
 
+    public void testRecursiveIncludeInParent() throws IOException {
+
+        // if we have a nested hierarchy, and all nested mappers have 'include_in_parent'
+        // set to 'true', then values from the grandchild nodes should be copied all the
+        // way up the hierarchy and into the root document, even if 'include_in_root' has
+        // explicitly been set to 'false'.
+
+        MapperService mapperService = createMapperService(mapping(b -> {
+            b.startObject("nested1");
+            b.field("type", "nested");
+            b.field("include_in_parent", true);
+            b.field("include_in_root", false);
+            b.startObject("properties");
+            b.startObject("nested1_id").field("type", "keyword").endObject();
+            b.startObject("nested2");
+            b.field("type", "nested");
+            b.field("include_in_parent", true);
+            b.field("include_in_root", false);
+            b.startObject("properties");
+            b.startObject("nested2_id").field("type", "keyword").endObject();
+            b.endObject();
+            b.endObject();
+            b.endObject();
+            b.endObject();
+        }));
+
+        ParsedDocument doc = mapperService.documentMapper().parse(source(b -> {
+            b.startObject("nested1");
+            b.field("nested1_id", "1");
+            b.startObject("nested2");
+            b.field("nested2_id", "2");
+            b.endObject();
+            b.endObject();
+        }));
+
+        assertNotNull(doc.rootDoc().getField("nested1.nested2.nested2_id"));
+    }
+
     /**
      * Same as {@link NestedObjectMapperTests#testMultipleLevelsIncludeRoot1()} but tests for the
      * case where the transitive {@code include_in_parent} and redundant {@code include_in_root}
@@ -605,36 +632,6 @@ public class NestedObjectMapperTests extends MapperServiceTestCase {
         merge(mapperService, MergeReason.MAPPING_RECOVERY, mapping.apply("_doc"));
     }
 
-    public void testParentObjectMapperAreNested() throws Exception {
-        MapperService mapperService = createMapperService(mapping(b -> {
-            b.startObject("comments");
-            {
-                b.field("type", "nested");
-                b.startObject("properties");
-                {
-                    b.startObject("messages").field("type", "nested").endObject();
-                }
-                b.endObject();
-            }
-            b.endObject();
-        }));
-        assertFalse(mapperService.documentMapper().mappers().hasNonNestedParent("comments.messages"));
-
-        mapperService = createMapperService(mapping(b -> {
-            b.startObject("comments");
-            {
-                b.field("type", "object");
-                b.startObject("properties");
-                {
-                    b.startObject("messages").field("type", "nested").endObject();
-                }
-                b.endObject();
-            }
-            b.endObject();
-        }));
-        assertTrue(mapperService.documentMapper().mappers().hasNonNestedParent("comments.messages"));
-    }
-
     public void testLimitNestedDocsDefaultSettings() throws Exception {
         Settings settings = Settings.builder().build();
         DocumentMapper docMapper
@@ -806,7 +803,7 @@ public class NestedObjectMapperTests extends MapperServiceTestCase {
 
         assertThat(doc.docs().size(), equalTo(3));
         if (version.before(Version.V_8_0_0)) {
-            assertThat(doc.docs().get(0).get(TypeFieldType.NAME), equalTo(nested1Mapper.nestedTypePath()));
+            assertThat(doc.docs().get(0).get("_type"), equalTo(nested1Mapper.nestedTypePath()));
         } else {
             assertThat(doc.docs().get(0).get(NestedPathFieldMapper.NAME), equalTo(nested1Mapper.nestedTypePath()));
         }
@@ -841,5 +838,35 @@ public class NestedObjectMapperTests extends MapperServiceTestCase {
             b.endObject();
         })));
         assertEquals("the [include_in_root] parameter can't be updated on a nested object mapping", e2.getMessage());
+    }
+
+    public void testMergeNestedMappingsFromDynamicUpdate() throws IOException {
+
+        // Check that dynamic mappings have redundant includes removed
+
+        MapperService mapperService = createMapperService(topMapping(b -> {
+            b.startArray("dynamic_templates");
+            b.startObject();
+            b.startObject("object_fields");
+            b.field("match_mapping_type", "object");
+            b.startObject("mapping");
+            b.field("type", "nested");
+            b.field("include_in_parent", true);
+            b.field("include_in_root", true);
+            b.endObject();
+            b.field("match", "*");
+            b.endObject();
+            b.endObject();
+            b.endArray();
+        }));
+
+        ParsedDocument doc = mapperService.documentMapper().parse(source(b -> b.startObject("object").endObject()));
+
+        merge(mapperService, Strings.toString(doc.dynamicMappingsUpdate()));
+        merge(mapperService, Strings.toString(doc.dynamicMappingsUpdate()));
+
+        assertThat(
+            Strings.toString(mapperService.documentMapper().mapping()),
+            containsString("\"properties\":{\"object\":{\"type\":\"nested\",\"include_in_parent\":true}}"));
     }
 }

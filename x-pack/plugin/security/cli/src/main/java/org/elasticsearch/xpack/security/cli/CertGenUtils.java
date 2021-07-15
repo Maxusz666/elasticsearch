@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.security.cli;
 
@@ -31,14 +32,13 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
 import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.SuppressForbidden;
-import org.elasticsearch.common.network.InetAddressHelper;
 import org.elasticsearch.common.network.NetworkAddress;
+import org.elasticsearch.common.network.NetworkUtils;
+import org.elasticsearch.core.SuppressForbidden;
 
 import javax.net.ssl.X509ExtendedKeyManager;
 import javax.net.ssl.X509ExtendedTrustManager;
 import javax.security.auth.x500.X500Principal;
-
 import java.io.IOException;
 import java.math.BigInteger;
 import java.net.InetAddress;
@@ -280,7 +280,7 @@ public class CertGenUtils {
         for (InetAddress address : addresses) {
             if (address.isAnyLocalAddress()) {
                 // it is a wildcard address
-                for (InetAddress inetAddress : InetAddressHelper.getAllAddresses()) {
+                for (InetAddress inetAddress : NetworkUtils.getAllAddresses()) {
                     addSubjectAlternativeNames(resolveName, inetAddress, generalNameList);
                 }
             } else {

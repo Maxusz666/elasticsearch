@@ -1,25 +1,15 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 package org.elasticsearch.search;
 
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.util.CharsRefBuilder;
+import org.elasticsearch.common.CheckedBiConsumer;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.settings.Settings;
@@ -59,6 +49,7 @@ import org.elasticsearch.search.fetch.subphase.highlight.FastVectorHighlighter;
 import org.elasticsearch.search.fetch.subphase.highlight.Highlighter;
 import org.elasticsearch.search.fetch.subphase.highlight.PlainHighlighter;
 import org.elasticsearch.search.fetch.subphase.highlight.UnifiedHighlighter;
+import org.elasticsearch.search.internal.ShardSearchRequest;
 import org.elasticsearch.search.rescore.QueryRescorerBuilder;
 import org.elasticsearch.search.rescore.RescoreContext;
 import org.elasticsearch.search.rescore.RescorerBuilder;
@@ -87,7 +78,10 @@ import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toSet;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 
 public class SearchModuleTests extends ESTestCase {
 
@@ -247,7 +241,7 @@ public class SearchModuleTests extends ESTestCase {
 
         Set<String> registeredNonDeprecated = module.getNamedXContents().stream()
                 .filter(e -> e.categoryClass.equals(QueryBuilder.class))
-                .filter(e -> e.name.getDeprecatedNames().length == 0)
+                .filter(e -> e.name.getAllReplacedWith() == null)
                 .map(e -> e.name.getPreferredName())
                 .collect(toSet());
         Set<String> registeredAll = module.getNamedXContents().stream()
@@ -307,18 +301,51 @@ public class SearchModuleTests extends ESTestCase {
                 hasSize(1));
     }
 
+    public void testRegisterNullRequestCacheKeyDifferentiator() {
+        final SearchModule module = new SearchModule(Settings.EMPTY, List.of());
+        assertThat(module.getRequestCacheKeyDifferentiator(), nullValue());
+    }
+
+    public void testRegisterRequestCacheKeyDifferentiator() {
+        final CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> requestCacheKeyDifferentiator = (r, o) -> { };
+        final SearchModule module = new SearchModule(Settings.EMPTY, List.of(new SearchPlugin() {
+            @Override
+            public CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> getRequestCacheKeyDifferentiator() {
+                return requestCacheKeyDifferentiator;
+            }
+        }));
+        assertThat(module.getRequestCacheKeyDifferentiator(), equalTo(requestCacheKeyDifferentiator));
+    }
+
+    public void testCannotRegisterMultipleRequestCacheKeyDifferentiators() {
+        final CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> differentiator1 = (r, o) -> {};
+        final CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> differentiator2 = (r, o) -> {};
+        final IllegalArgumentException e =
+            expectThrows(IllegalArgumentException.class, () -> new SearchModule(Settings.EMPTY, List.of(new SearchPlugin() {
+                @Override
+                public CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> getRequestCacheKeyDifferentiator() {
+                    return differentiator1;
+                }
+            }, new SearchPlugin() {
+                @Override
+                public CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> getRequestCacheKeyDifferentiator() {
+                    return differentiator2;
+                }
+            })));
+        assertThat(e.getMessage(), containsString("Cannot have more than one plugin providing a request cache key differentiator"));
+    }
+
     private static final String[] NON_DEPRECATED_QUERIES = new String[] {
             "bool",
             "boosting",
             "constant_score",
+            "combined_fields",
             "dis_max",
             "exists",
-            "field_masking_span",
             "function_score",
             "fuzzy",
             "geo_bounding_box",
             "geo_distance",
-            "geo_polygon",
             "geo_shape",
             "ids",
             "intervals",
@@ -339,6 +366,7 @@ public class SearchModuleTests extends ESTestCase {
             "script_score",
             "simple_query_string",
             "span_containing",
+            "span_field_masking",
             "span_first",
             "span_gap",
             "span_multi",
@@ -356,7 +384,7 @@ public class SearchModuleTests extends ESTestCase {
     };
 
     //add here deprecated queries to make sure we log a deprecation warnings when they are used
-    private static final String[] DEPRECATED_QUERIES = new String[] {};
+    private static final String[] DEPRECATED_QUERIES = new String[] {"field_masking_span", "geo_polygon"};
 
     /**
      * Dummy test {@link AggregationBuilder} used to test registering aggregation builders.

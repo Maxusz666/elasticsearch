@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.index.mapper;
@@ -285,38 +274,52 @@ public class SearchAsYouTypeFieldMapper extends FieldMapper {
             }
         }
 
+        private void checkForPositions() {
+            if (getTextSearchInfo().hasPositions() == false) {
+                throw new IllegalStateException("field:[" + name() + "] was indexed without position data; cannot run PhraseQuery");
+            }
+        }
+
         @Override
-        public Query phraseQuery(TokenStream stream, int slop, boolean enablePositionIncrements) throws IOException {
+        public Query phraseQuery(TokenStream stream, int slop, boolean enablePositionIncrements,
+                SearchExecutionContext context) throws IOException {
+            checkForPositions();
             int numPos = countPosition(stream);
             if (shingleFields.length == 0 || slop > 0 || hasGaps(stream) || numPos <= 1) {
                 return TextFieldMapper.createPhraseQuery(stream, name(), slop, enablePositionIncrements);
             }
             final ShingleFieldType shingleField = shingleFieldForPositions(numPos);
             stream = new FixedShingleFilter(stream, shingleField.shingleSize);
-            return shingleField.phraseQuery(stream, 0, true);
+            return shingleField.phraseQuery(stream, 0, true, context);
         }
 
         @Override
-        public Query multiPhraseQuery(TokenStream stream, int slop, boolean enablePositionIncrements) throws IOException {
+        public Query multiPhraseQuery(TokenStream stream, int slop, boolean enablePositionIncrements,
+                SearchExecutionContext context) throws IOException {
+            checkForPositions();
             int numPos = countPosition(stream);
             if (shingleFields.length == 0 || slop > 0 || hasGaps(stream) || numPos <= 1) {
                 return TextFieldMapper.createPhraseQuery(stream, name(), slop, enablePositionIncrements);
             }
             final ShingleFieldType shingleField = shingleFieldForPositions(numPos);
             stream = new FixedShingleFilter(stream, shingleField.shingleSize);
-            return shingleField.multiPhraseQuery(stream, 0, true);
+            return shingleField.multiPhraseQuery(stream, 0, true, context);
         }
 
         @Override
-        public Query phrasePrefixQuery(TokenStream stream, int slop, int maxExpansions) throws IOException {
+        public Query phrasePrefixQuery(TokenStream stream, int slop, int maxExpansions,
+                SearchExecutionContext context) throws IOException {
             int numPos = countPosition(stream);
+            if (numPos > 1) {
+                checkForPositions();
+            }
             if (shingleFields.length == 0 || slop > 0 || hasGaps(stream) || numPos <= 1) {
                 return TextFieldMapper.createPhrasePrefixQuery(stream, name(), slop, maxExpansions,
                     null, null);
             }
             final ShingleFieldType shingleField = shingleFieldForPositions(numPos);
             stream = new FixedShingleFilter(stream, shingleField.shingleSize);
-            return shingleField.phrasePrefixQuery(stream, 0, maxExpansions);
+            return shingleField.phrasePrefixQuery(stream, 0, maxExpansions, context);
         }
 
         @Override
@@ -413,7 +416,7 @@ public class SearchAsYouTypeFieldMapper extends FieldMapper {
         }
 
         @Override
-        protected void parseCreateField(ParseContext context) {
+        protected void parseCreateField(DocumentParserContext context) {
             throw new UnsupportedOperationException();
         }
 
@@ -452,7 +455,7 @@ public class SearchAsYouTypeFieldMapper extends FieldMapper {
         }
 
         @Override
-        protected void parseCreateField(ParseContext context) {
+        protected void parseCreateField(DocumentParserContext context) {
             throw new UnsupportedOperationException();
         }
 
@@ -513,17 +516,20 @@ public class SearchAsYouTypeFieldMapper extends FieldMapper {
         }
 
         @Override
-        public Query phraseQuery(TokenStream stream, int slop, boolean enablePositionIncrements) throws IOException {
+        public Query phraseQuery(TokenStream stream, int slop, boolean enablePositionIncrements,
+                SearchExecutionContext context) throws IOException {
             return TextFieldMapper.createPhraseQuery(stream, name(), slop, enablePositionIncrements);
         }
 
         @Override
-        public Query multiPhraseQuery(TokenStream stream, int slop, boolean enablePositionIncrements) throws IOException {
+        public Query multiPhraseQuery(TokenStream stream, int slop, boolean enablePositionIncrements,
+                SearchExecutionContext context) throws IOException {
             return TextFieldMapper.createPhraseQuery(stream, name(), slop, enablePositionIncrements);
         }
 
         @Override
-        public Query phrasePrefixQuery(TokenStream stream, int slop, int maxExpansions) throws IOException {
+        public Query phrasePrefixQuery(TokenStream stream, int slop, int maxExpansions,
+                SearchExecutionContext context) throws IOException {
             final String prefixFieldName = slop > 0
                 ? null
                 : prefixFieldType.name();
@@ -556,7 +562,7 @@ public class SearchAsYouTypeFieldMapper extends FieldMapper {
                                       PrefixFieldMapper prefixField,
                                       ShingleFieldMapper[] shingleFields,
                                       Builder builder) {
-        super(simpleName, mappedFieldType, indexAnalyzers, MultiFields.empty(), copyTo);
+        super(simpleName, mappedFieldType, indexAnalyzers, MultiFields.empty(), copyTo, false, null);
         this.prefixField = prefixField;
         this.shingleFields = shingleFields;
         this.maxShingleSize = builder.maxShingleSize.getValue();
@@ -564,8 +570,8 @@ public class SearchAsYouTypeFieldMapper extends FieldMapper {
     }
 
     @Override
-    protected void parseCreateField(ParseContext context) throws IOException {
-        final String value = context.externalValueSet() ? context.externalValue().toString() : context.parser().textOrNull();
+    protected void parseCreateField(DocumentParserContext context) throws IOException {
+        final String value = context.parser().textOrNull();
         if (value == null) {
             return;
         }
@@ -582,7 +588,7 @@ public class SearchAsYouTypeFieldMapper extends FieldMapper {
             context.doc().add(new Field(prefixField.fieldType().name(), value, prefixField.getLuceneFieldType()));
         }
         if (fieldType().fieldType.omitNorms()) {
-            createFieldNamesField(context);
+            context.addToFieldNames(fieldType().name());
         }
     }
 

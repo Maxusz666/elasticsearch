@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 package org.elasticsearch.xpack.transform.transforms;
@@ -9,6 +10,7 @@ package org.elasticsearch.xpack.transform.transforms;
 import org.apache.lucene.search.TotalHits;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.LatchedActionListener;
+import org.elasticsearch.action.admin.indices.refresh.RefreshResponse;
 import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
@@ -17,7 +19,10 @@ import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
 import org.elasticsearch.client.Client;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
+import org.elasticsearch.index.reindex.BulkByScrollResponse;
+import org.elasticsearch.index.reindex.BulkByScrollTask;
+import org.elasticsearch.index.reindex.DeleteByQueryRequest;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.internal.InternalSearchResponse;
@@ -29,6 +34,7 @@ import org.elasticsearch.threadpool.TestThreadPool;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.xpack.core.indexing.IndexerState;
 import org.elasticsearch.xpack.core.indexing.IterationResult;
+import org.elasticsearch.xpack.core.scheduler.SchedulerEngine;
 import org.elasticsearch.xpack.core.transform.transforms.SettingsConfig;
 import org.elasticsearch.xpack.core.transform.transforms.TimeSyncConfig;
 import org.elasticsearch.xpack.core.transform.transforms.TransformCheckpoint;
@@ -37,8 +43,10 @@ import org.elasticsearch.xpack.core.transform.transforms.TransformIndexerPositio
 import org.elasticsearch.xpack.core.transform.transforms.TransformIndexerStats;
 import org.elasticsearch.xpack.core.transform.transforms.TransformState;
 import org.elasticsearch.xpack.core.transform.transforms.TransformTaskState;
+import org.elasticsearch.xpack.transform.TransformServices;
 import org.elasticsearch.xpack.transform.checkpoint.CheckpointProvider;
 import org.elasticsearch.xpack.transform.checkpoint.MockTimebasedCheckpointProvider;
+import org.elasticsearch.xpack.transform.checkpoint.TransformCheckpointService;
 import org.elasticsearch.xpack.transform.notifications.MockTransformAuditor;
 import org.elasticsearch.xpack.transform.notifications.TransformAuditor;
 import org.elasticsearch.xpack.transform.persistence.InMemoryTransformConfigManager;
@@ -103,9 +111,8 @@ public class TransformIndexerStateTests extends ESTestCase {
 
         MockedTransformIndexer(
             ThreadPool threadPool,
-            TransformConfigManager transformsConfigManager,
+            TransformServices transformServices,
             CheckpointProvider checkpointProvider,
-            TransformAuditor auditor,
             TransformConfig transformConfig,
             Map<String, String> fieldMappings,
             AtomicReference<IndexerState> initialState,
@@ -115,9 +122,8 @@ public class TransformIndexerStateTests extends ESTestCase {
         ) {
             super(
                 threadPool,
-                transformsConfigManager,
+                transformServices,
                 checkpointProvider,
-                auditor,
                 transformConfig,
                 fieldMappings,
                 initialState,
@@ -157,6 +163,24 @@ public class TransformIndexerStateTests extends ESTestCase {
         @Override
         void doGetInitialProgress(SearchRequest request, ActionListener<SearchResponse> responseListener) {
             responseListener.onResponse(ONE_HIT_SEARCH_RESPONSE);
+        }
+
+        @Override
+        void doDeleteByQuery(DeleteByQueryRequest deleteByQueryRequest, ActionListener<BulkByScrollResponse> responseListener) {
+            responseListener.onResponse(
+                new BulkByScrollResponse(
+                    TimeValue.ZERO,
+                    new BulkByScrollTask.Status(Collections.emptyList(), null),
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    false
+                )
+            );
+        }
+
+        @Override
+        void refreshDestinationIndex(ActionListener<RefreshResponse> responseListener) {
+            responseListener.onResponse(new RefreshResponse(1, 1, 0, Collections.emptyList()));
         }
 
         @Override
@@ -251,6 +275,7 @@ public class TransformIndexerStateTests extends ESTestCase {
             randomPivotConfig(),
             null,
             randomBoolean() ? null : randomAlphaOfLengthBetween(1, 1000),
+            null,
             null,
             null,
             null
@@ -459,6 +484,7 @@ public class TransformIndexerStateTests extends ESTestCase {
             randomBoolean() ? null : randomAlphaOfLengthBetween(1, 1000),
             new SettingsConfig(null, Float.valueOf(1.0f), (Boolean) null),
             null,
+            null,
             null
         );
         AtomicReference<IndexerState> state = new AtomicReference<>(IndexerState.STARTED);
@@ -568,12 +594,17 @@ public class TransformIndexerStateTests extends ESTestCase {
     ) {
         CheckpointProvider checkpointProvider = new MockTimebasedCheckpointProvider(config);
         transformConfigManager.putTransformConfiguration(config, ActionListener.wrap(r -> {}, e -> {}));
+        TransformServices transformServices = new TransformServices(
+            transformConfigManager,
+            mock(TransformCheckpointService.class),
+            auditor,
+            mock(SchedulerEngine.class)
+        );
 
         MockedTransformIndexer indexer = new MockedTransformIndexer(
             threadPool,
-            transformConfigManager,
+            transformServices,
             checkpointProvider,
-            auditor,
             config,
             Collections.emptyMap(),
             state,

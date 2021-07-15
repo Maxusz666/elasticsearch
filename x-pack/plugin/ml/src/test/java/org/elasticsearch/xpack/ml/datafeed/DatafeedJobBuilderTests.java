@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.ml.datafeed;
 
@@ -74,10 +75,10 @@ public class DatafeedJobBuilderTests extends ESTestCase {
     public void testBuild_GivenScrollDatafeedAndNewJob() throws Exception {
         DataDescription.Builder dataDescription = new DataDescription.Builder();
         dataDescription.setTimeField("time");
-        Job.Builder jobBuilder = DatafeedManagerTests.createDatafeedJob();
+        Job.Builder jobBuilder = DatafeedRunnerTests.createDatafeedJob();
         jobBuilder.setDataDescription(dataDescription);
         jobBuilder.setCreateTime(new Date());
-        DatafeedConfig.Builder datafeed = DatafeedManagerTests.createDatafeedConfig("datafeed1", jobBuilder.getId());
+        DatafeedConfig.Builder datafeed = DatafeedRunnerTests.createDatafeedConfig("datafeed1", jobBuilder.getId());
 
         AtomicBoolean wasHandlerCalled = new AtomicBoolean(false);
         ActionListener<DatafeedJob> datafeedJobHandler = ActionListener.wrap(
@@ -106,10 +107,10 @@ public class DatafeedJobBuilderTests extends ESTestCase {
     public void testBuild_GivenScrollDatafeedAndOldJobWithLatestRecordTimestampAfterLatestBucket() throws Exception {
         DataDescription.Builder dataDescription = new DataDescription.Builder();
         dataDescription.setTimeField("time");
-        Job.Builder jobBuilder = DatafeedManagerTests.createDatafeedJob();
+        Job.Builder jobBuilder = DatafeedRunnerTests.createDatafeedJob();
         jobBuilder.setDataDescription(dataDescription);
         jobBuilder.setCreateTime(new Date());
-        DatafeedConfig.Builder datafeed = DatafeedManagerTests.createDatafeedConfig("datafeed1", jobBuilder.getId());
+        DatafeedConfig.Builder datafeed = DatafeedRunnerTests.createDatafeedConfig("datafeed1", jobBuilder.getId());
 
         AtomicBoolean wasHandlerCalled = new AtomicBoolean(false);
         ActionListener<DatafeedJob> datafeedJobHandler = ActionListener.wrap(
@@ -138,10 +139,10 @@ public class DatafeedJobBuilderTests extends ESTestCase {
     public void testBuild_GivenScrollDatafeedAndOldJobWithLatestBucketAfterLatestRecordTimestamp() throws Exception {
         DataDescription.Builder dataDescription = new DataDescription.Builder();
         dataDescription.setTimeField("time");
-        Job.Builder jobBuilder = DatafeedManagerTests.createDatafeedJob();
+        Job.Builder jobBuilder = DatafeedRunnerTests.createDatafeedJob();
         jobBuilder.setDataDescription(dataDescription);
         jobBuilder.setCreateTime(new Date());
-        DatafeedConfig.Builder datafeed = DatafeedManagerTests.createDatafeedConfig("datafeed1", jobBuilder.getId());
+        DatafeedConfig.Builder datafeed = DatafeedRunnerTests.createDatafeedConfig("datafeed1", jobBuilder.getId());
 
         AtomicBoolean wasHandlerCalled = new AtomicBoolean(false);
         ActionListener<DatafeedJob> datafeedJobHandler = ActionListener.wrap(
@@ -180,10 +181,10 @@ public class DatafeedJobBuilderTests extends ESTestCase {
                 "test_node");
         DataDescription.Builder dataDescription = new DataDescription.Builder();
         dataDescription.setTimeField("time");
-        Job.Builder jobBuilder = DatafeedManagerTests.createDatafeedJob();
+        Job.Builder jobBuilder = DatafeedRunnerTests.createDatafeedJob();
         jobBuilder.setDataDescription(dataDescription);
         jobBuilder.setCreateTime(new Date());
-        DatafeedConfig.Builder datafeed = DatafeedManagerTests.createDatafeedConfig("datafeed1", jobBuilder.getId());
+        DatafeedConfig.Builder datafeed = DatafeedRunnerTests.createDatafeedConfig("datafeed1", jobBuilder.getId());
         datafeed.setIndices(Collections.singletonList("remotecluster:index-*"));
 
         AtomicBoolean wasHandlerCalled = new AtomicBoolean(false);

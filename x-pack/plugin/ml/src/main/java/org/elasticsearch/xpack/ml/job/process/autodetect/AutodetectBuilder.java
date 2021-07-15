@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.ml.job.process.autodetect;
 
@@ -55,6 +56,7 @@ public class AutodetectBuilder {
     public static final String LENGTH_ENCODED_INPUT_ARG = "--lengthEncodedInput";
     public static final String MODEL_CONFIG_ARG = "--modelconfig=";
     public static final String QUANTILES_STATE_PATH_ARG = "--quantilesState=";
+    public static final String LICENSE_KEY_VALIDATED_ARG = "--validElasticLicenseKeyConfirmed=";
 
     private static final String JSON_EXTENSION = ".json";
     private static final String CONFIG_ARG = "--config=";
@@ -166,6 +168,9 @@ public class AutodetectBuilder {
             command.add(MODEL_CONFIG_ARG + modelConfigFile);
         }
 
+        // License has been created by the open job action
+        command.add(LICENSE_KEY_VALIDATED_ARG + true);
+
         return command;
     }
 
@@ -174,7 +179,7 @@ public class AutodetectBuilder {
     }
 
     private void buildQuantiles(List<String> command) throws IOException {
-        if (quantiles != null && !quantiles.getQuantileState().isEmpty()) {
+        if (quantiles != null && quantiles.getQuantileState().isEmpty() == false) {
             logger.info("Restoring quantiles for job '" + job.getId() + "'");
 
             Path normalizersStateFilePath = writeNormalizerInitState(job.getId(), quantiles.getQuantileState(), env);

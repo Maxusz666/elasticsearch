@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.security.authc.saml;
 
@@ -9,8 +10,8 @@ import com.sun.net.httpserver.HttpsServer;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.support.PlainActionFuture;
-import org.elasticsearch.bootstrap.JavaVersion;
-import org.elasticsearch.common.collect.Tuple;
+import org.elasticsearch.jdk.JavaVersion;
+import org.elasticsearch.core.Tuple;
 import org.elasticsearch.common.settings.MockSecureSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.SettingsException;
@@ -432,6 +433,7 @@ public class SamlRealmTests extends SamlTestCase {
         assertThat(credential.getPublicKey(), equalTo(encryptionCert.getPublicKey()));
     }
 
+    @AwaitsFix(bugUrl = "https://github.com/elastic/elasticsearch/issues/75097")
     public void testCreateEncryptionCredentialFromKeyStore() throws Exception {
         assumeFalse("Can't run in a FIPS JVM, PKCS12 keystores are not usable", inFipsJvm());
         final Path dir = createTempDir();
@@ -481,6 +483,7 @@ public class SamlRealmTests extends SamlTestCase {
         });
     }
 
+    @AwaitsFix(bugUrl = "https://github.com/elastic/elasticsearch/issues/75097")
     public void testCreateSigningCredentialFromKeyStoreSuccessScenarios() throws Exception {
         assumeFalse("Can't run in a FIPS JVM, PKCS12 keystores are not usable", inFipsJvm());
         final Path dir = createTempDir();
@@ -521,6 +524,7 @@ public class SamlRealmTests extends SamlTestCase {
         assertThat(credential.getPublicKey(), equalTo(certKeyPair1.v1().getPublicKey()));
     }
 
+    @AwaitsFix(bugUrl = "https://github.com/elastic/elasticsearch/issues/75097")
     public void testCreateSigningCredentialFromKeyStoreFailureScenarios() throws Exception {
         assumeFalse("Can't run in a FIPS JVM, PKCS12 keystores are not usable", inFipsJvm());
         final Path dir = createTempDir();

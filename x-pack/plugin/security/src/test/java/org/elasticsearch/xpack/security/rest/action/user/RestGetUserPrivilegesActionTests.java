@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 package org.elasticsearch.xpack.security.rest.action.user;
@@ -98,8 +99,8 @@ public class RestGetUserPrivilegesActionTests extends ESTestCase {
             "{\"names\":[\"index-1\",\"index-2\",\"index-3-*\"]," +
             "\"privileges\":[\"read\",\"write\"]," +
             "\"field_security\":[" +
-            "{\"grant\":[\"public.*\"]}," +
-            "{\"grant\":[\"*\"],\"except\":[\"private.*\"]}" +
+            "{\"grant\":[\"*\"],\"except\":[\"private.*\"]}," +
+            "{\"grant\":[\"public.*\"]}" +
             "]," +
             "\"query\":[" +
             "\"{ \\\"term\\\": { \\\"access\\\": \\\"public\\\" } }\"," +

@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.ssl;
 
@@ -11,7 +12,7 @@ import org.apache.http.ssl.SSLContexts;
 import org.apache.http.util.EntityUtils;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.ExceptionsHelper;
-import org.elasticsearch.bootstrap.JavaVersion;
+import org.elasticsearch.jdk.JavaVersion;
 import org.elasticsearch.client.Request;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.Response;
@@ -54,8 +55,8 @@ public class SSLClientAuthTests extends SecurityIntegTestCase {
     }
 
     @Override
-    protected Settings nodeSettings(int nodeOrdinal) {
-        Settings baseSettings = super.nodeSettings(nodeOrdinal);
+    protected Settings nodeSettings(int nodeOrdinal, Settings otherSettings) {
+        Settings baseSettings = super.nodeSettings(nodeOrdinal, otherSettings);
 
         Settings.Builder builder = Settings.builder().put(baseSettings);
         baseSettings.getByPrefix("xpack.security.transport.ssl.")

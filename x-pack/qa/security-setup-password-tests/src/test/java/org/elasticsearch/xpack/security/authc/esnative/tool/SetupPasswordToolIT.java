@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.security.authc.esnative.tool;
 
@@ -11,8 +12,8 @@ import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.Response;
 import org.elasticsearch.client.WarningsHandler;
 import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.SuppressForbidden;
-import org.elasticsearch.common.io.PathUtils;
+import org.elasticsearch.core.SuppressForbidden;
+import org.elasticsearch.core.PathUtils;
 import org.elasticsearch.common.network.InetAddresses;
 import org.elasticsearch.common.network.NetworkService;
 import org.elasticsearch.common.settings.SecureString;
@@ -34,8 +35,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-
-import static org.elasticsearch.xpack.core.security.authc.support.UsernamePasswordToken.basicAuthHeaderValue;
 
 public class SetupPasswordToolIT extends ESRestTestCase {
 

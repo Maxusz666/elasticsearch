@@ -1,26 +1,15 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.cluster.metadata;
 
 import org.elasticsearch.action.admin.indices.alias.Alias;
-import org.elasticsearch.common.Nullable;
+import org.elasticsearch.core.Nullable;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.xcontent.LoggingDeprecationHandler;
@@ -35,6 +24,7 @@ import org.elasticsearch.indices.InvalidAliasNameException;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Optional;
 import java.util.function.Function;
 
 import static org.elasticsearch.index.query.AbstractQueryBuilder.parseInnerQueryBuilder;
@@ -50,7 +40,7 @@ public class AliasValidator {
      * @throws IllegalArgumentException if the alias is not valid
      */
     public void validateAlias(Alias alias, String index, Metadata metadata) {
-        validateAlias(alias.name(), index, alias.indexRouting(), metadata::index);
+        validateAlias(alias.name(), index, alias.indexRouting(), lookup(metadata));
     }
 
     /**
@@ -59,7 +49,7 @@ public class AliasValidator {
      * @throws IllegalArgumentException if the alias is not valid
      */
     public void validateAliasMetadata(AliasMetadata aliasMetadata, String index, Metadata metadata) {
-        validateAlias(aliasMetadata.alias(), index, aliasMetadata.indexRouting(), metadata::index);
+        validateAlias(aliasMetadata.alias(), index, aliasMetadata.indexRouting(), lookup(metadata));
     }
 
     /**
@@ -83,21 +73,21 @@ public class AliasValidator {
     /**
      * Validate a proposed alias.
      */
-    public void validateAlias(String alias, String index, @Nullable String indexRouting, Function<String, IndexMetadata> indexLookup) {
+    public void validateAlias(String alias, String index, @Nullable String indexRouting, Function<String, String> lookup) {
         validateAliasStandalone(alias, indexRouting);
 
-        if (!Strings.hasText(index)) {
+        if (Strings.hasText(index) == false) {
             throw new IllegalArgumentException("index name is required");
         }
 
-        IndexMetadata indexNamedSameAsAlias = indexLookup.apply(alias);
-        if (indexNamedSameAsAlias != null) {
-            throw new InvalidAliasNameException(indexNamedSameAsAlias.getIndex(), alias, "an index exists with the same name as the alias");
+        String sameNameAsAlias = lookup.apply(alias);
+        if (sameNameAsAlias != null) {
+            throw new InvalidAliasNameException(alias, "an index or data stream exists with the same name as the alias");
         }
     }
 
     void validateAliasStandalone(String alias, String indexRouting) {
-        if (!Strings.hasText(alias)) {
+        if (Strings.hasText(alias) == false) {
             throw new IllegalArgumentException("alias name is required");
         }
         MetadataCreateIndexService.validateIndexOrAliasName(alias, InvalidAliasNameException::new);
@@ -144,5 +134,11 @@ public class AliasValidator {
         QueryBuilder parseInnerQueryBuilder = parseInnerQueryBuilder(parser);
         QueryBuilder queryBuilder = Rewriteable.rewrite(parseInnerQueryBuilder, searchExecutionContext, true);
         queryBuilder.toQuery(searchExecutionContext);
+    }
+
+    private static Function<String, String> lookup(Metadata metadata) {
+        return name -> Optional.ofNullable(metadata.getIndicesLookup().get(name))
+            .filter(indexAbstraction -> indexAbstraction.getType() != IndexAbstraction.Type.ALIAS)
+            .map(IndexAbstraction::getName).orElse(null);
     }
 }

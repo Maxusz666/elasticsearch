@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 package org.elasticsearch.xpack.autoscaling.capacity;
@@ -14,11 +15,11 @@ import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.cluster.node.DiscoveryNodeRole;
 import org.elasticsearch.cluster.routing.allocation.decider.AllocationDeciders;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
-import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.util.set.Sets;
+import org.elasticsearch.core.Tuple;
 import org.elasticsearch.snapshots.SnapshotShardSizeInfo;
 import org.elasticsearch.xpack.autoscaling.Autoscaling;
 import org.elasticsearch.xpack.autoscaling.AutoscalingMetadata;
@@ -37,8 +38,6 @@ import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-
-import static org.elasticsearch.xpack.autoscaling.capacity.AutoscalingDeciderService.EMPTY_ROLES;
 
 public class AutoscalingCalculateCapacityService implements PolicyValidator {
     private final Map<String, AutoscalingDeciderService> deciderByName;
@@ -173,7 +172,7 @@ public class AutoscalingCalculateCapacityService implements PolicyValidator {
 
     private boolean appliesToPolicy(AutoscalingDeciderService deciderService, SortedSet<String> roles) {
         if (roles.isEmpty()) {
-            return deciderService.roles().contains(EMPTY_ROLES);
+            return deciderService.appliesToEmptyRoles();
         } else {
             return deciderService.roles().stream().map(DiscoveryNodeRole::roleName).anyMatch(roles::contains);
         }
@@ -195,7 +194,7 @@ public class AutoscalingCalculateCapacityService implements PolicyValidator {
      * over to an older master before it is also upgraded, one of the roles might not be known.
      */
     private boolean hasUnknownRoles(AutoscalingPolicy policy) {
-        return DiscoveryNode.getPossibleRoleNames().containsAll(policy.roles()) == false;
+        return DiscoveryNodeRole.roleNames().containsAll(policy.roles()) == false;
     }
 
     private AutoscalingDeciderResult calculateForDecider(String name, Settings configuration, AutoscalingDeciderContext context) {
@@ -222,7 +221,7 @@ public class AutoscalingCalculateCapacityService implements PolicyValidator {
             SnapshotShardSizeInfo snapshotShardSizeInfo,
             AutoscalingMemoryInfo memoryInfo
         ) {
-            this.roles = roles.stream().map(DiscoveryNode::getRoleFromRoleName).collect(Sets.toUnmodifiableSortedSet());
+            this.roles = roles.stream().map(DiscoveryNodeRole::getRoleFromRoleName).collect(Sets.toUnmodifiableSortedSet());
             Objects.requireNonNull(state);
             Objects.requireNonNull(clusterInfo);
             this.state = state;
@@ -257,12 +256,17 @@ public class AutoscalingCalculateCapacityService implements PolicyValidator {
             return currentNodes;
         }
 
+        @Override
+        public Set<DiscoveryNodeRole> roles() {
+            return roles;
+        }
+
         private boolean calculateCurrentCapacityAccurate() {
             return currentNodes.stream().allMatch(this::nodeHasAccurateCapacity);
         }
 
         private boolean nodeHasAccurateCapacity(DiscoveryNode node) {
-            if (node.isDataNode()) {
+            if (node.canContainData()) {
                 // todo: multiple data path support.
                 DiskUsage mostAvailable = clusterInfo.getNodeMostAvailableDiskUsages().get(node.getId());
                 DiskUsage leastAvailable = clusterInfo.getNodeLeastAvailableDiskUsages().get(node.getId());
@@ -290,7 +294,7 @@ public class AutoscalingCalculateCapacityService implements PolicyValidator {
         }
 
         private AutoscalingCapacity.AutoscalingResources resourcesFor(DiscoveryNode node) {
-            long storage = node.isDataNode()
+            long storage = node.canContainData()
                 ? Math.max(
                     totalStorage(clusterInfo.getNodeLeastAvailableDiskUsages(), node),
                     totalStorage(clusterInfo.getNodeMostAvailableDiskUsages(), node)

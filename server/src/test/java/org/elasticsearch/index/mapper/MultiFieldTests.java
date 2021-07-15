@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.index.mapper;
@@ -27,7 +16,6 @@ import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.xcontent.XContentHelper;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.common.xcontent.support.XContentMapValues;
-import org.elasticsearch.index.mapper.ParseContext.Document;
 import org.elasticsearch.index.mapper.TextFieldMapper.TextFieldType;
 
 import java.util.Arrays;
@@ -49,7 +37,7 @@ public class MultiFieldTests extends MapperServiceTestCase {
         MapperService mapperService = createMapperService(mapping);
 
         BytesReference json = new BytesArray(copyToBytesFromClasspath("/org/elasticsearch/index/mapper/multifield/test-data.json"));
-        Document doc = mapperService.documentMapper().parse(
+        LuceneDocument doc = mapperService.documentMapper().parse(
             new SourceToParse("test", "1", json, XContentType.JSON)).rootDoc();
 
         IndexableField f = doc.getField("name");
@@ -126,7 +114,7 @@ public class MultiFieldTests extends MapperServiceTestCase {
         }));
 
         BytesReference json = new BytesArray(copyToBytesFromClasspath("/org/elasticsearch/index/mapper/multifield/test-data.json"));
-        Document doc = builderDocMapper.parse(new SourceToParse("test", "1", json, XContentType.JSON)).rootDoc();
+        LuceneDocument doc = builderDocMapper.parse(new SourceToParse("test", "1", json, XContentType.JSON)).rootDoc();
 
         IndexableField f = doc.getField("name");
         assertThat(f.name(), equalTo("name"));
@@ -154,7 +142,7 @@ public class MultiFieldTests extends MapperServiceTestCase {
         String[] multiFieldNames = new String[randomIntBetween(2, 10)];
         Set<String> seenFields = new HashSet<>();
         for (int i = 0; i < multiFieldNames.length; i++) {
-            multiFieldNames[i] = randomValueOtherThanMany(s -> !seenFields.add(s), () -> randomAlphaOfLength(4));
+            multiFieldNames[i] = randomValueOtherThanMany(s -> seenFields.add(s) == false, () -> randomAlphaOfLength(4));
         }
 
         DocumentMapper docMapper = createDocumentMapper(fieldMapping(b -> {

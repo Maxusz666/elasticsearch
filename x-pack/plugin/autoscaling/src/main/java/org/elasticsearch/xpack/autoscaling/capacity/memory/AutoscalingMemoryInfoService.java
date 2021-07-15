@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 package org.elasticsearch.xpack.autoscaling.capacity.memory;
@@ -22,7 +23,7 @@ import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Setting;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.xpack.autoscaling.AutoscalingMetadata;
 import org.elasticsearch.xpack.autoscaling.policy.AutoscalingPolicy;
 import org.elasticsearch.xpack.autoscaling.policy.AutoscalingPolicyMetadata;
@@ -160,7 +161,7 @@ public class AutoscalingMemoryInfoService {
     }
 
     private Set<DiscoveryNodeRole> toRoles(SortedSet<String> roleNames) {
-        return roleNames.stream().map(DiscoveryNode::getRoleFromRoleName).collect(Collectors.toSet());
+        return roleNames.stream().map(DiscoveryNodeRole::getRoleFromRoleName).collect(Collectors.toSet());
     }
 
     private void retainAliveNodes(Set<DiscoveryNode> currentNodes) {

@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.watcher.actions.index;
 
@@ -14,7 +15,7 @@ import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.bytes.BytesReference;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.xpack.core.ClientHelper;
@@ -119,7 +120,7 @@ public class ExecutableIndexAction extends ExecutableAction<IndexAction> {
         }
 
         for (Object item : list) {
-            if (!(item instanceof Map)) {
+            if ((item instanceof Map) == false) {
                 throw illegalState("could not execute action [{}] of watch [{}]. failed to index payload data. " +
                         "[_data] field must either hold a Map or an List/Array of Maps", actionId, ctx.watch().id());
             }

@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.painless.phase;
@@ -87,6 +76,7 @@ import org.elasticsearch.painless.symbol.Decorations.AnyBreak;
 import org.elasticsearch.painless.symbol.Decorations.AnyContinue;
 import org.elasticsearch.painless.symbol.Decorations.BeginLoop;
 import org.elasticsearch.painless.symbol.Decorations.BinaryType;
+import org.elasticsearch.painless.symbol.Decorations.CaptureBox;
 import org.elasticsearch.painless.symbol.Decorations.CapturesDecoration;
 import org.elasticsearch.painless.symbol.Decorations.ComparisonType;
 import org.elasticsearch.painless.symbol.Decorations.CompoundType;
@@ -98,6 +88,8 @@ import org.elasticsearch.painless.symbol.Decorations.Explicit;
 import org.elasticsearch.painless.symbol.Decorations.ExpressionPainlessCast;
 import org.elasticsearch.painless.symbol.Decorations.GetterPainlessMethod;
 import org.elasticsearch.painless.symbol.Decorations.InLoop;
+import org.elasticsearch.painless.symbol.Decorations.InstanceCapturingFunctionRef;
+import org.elasticsearch.painless.symbol.Decorations.InstanceCapturingLambda;
 import org.elasticsearch.painless.symbol.Decorations.InstanceType;
 import org.elasticsearch.painless.symbol.Decorations.Internal;
 import org.elasticsearch.painless.symbol.Decorations.IterablePainlessMethod;
@@ -1736,7 +1728,9 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
             localFunction = null;
         }
 
-        if (localFunction == null) {
+        if (localFunction != null) {
+            semanticScope.setUsesInstanceMethod();
+        } else {
             importedMethod = scriptScope.getPainlessLookup().lookupImportedPainlessMethod(methodName, userArgumentsSize);
 
             if (importedMethod == null) {
@@ -2062,51 +2056,52 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
 
         Location location = userRegexNode.getLocation();
 
-        int constant = 0;
+        int regexFlags = 0;
 
         for (int i = 0; i < flags.length(); ++i) {
             char flag = flags.charAt(i);
 
             switch (flag) {
                 case 'c':
-                    constant |= Pattern.CANON_EQ;
+                    regexFlags |= Pattern.CANON_EQ;
                     break;
                 case 'i':
-                    constant |= Pattern.CASE_INSENSITIVE;
+                    regexFlags |= Pattern.CASE_INSENSITIVE;
                     break;
                 case 'l':
-                    constant |= Pattern.LITERAL;
+                    regexFlags |= Pattern.LITERAL;
                     break;
                 case 'm':
-                    constant |= Pattern.MULTILINE;
+                    regexFlags |= Pattern.MULTILINE;
                     break;
                 case 's':
-                    constant |= Pattern.DOTALL;
+                    regexFlags |= Pattern.DOTALL;
                     break;
                 case 'U':
-                    constant |= Pattern.UNICODE_CHARACTER_CLASS;
+                    regexFlags |= Pattern.UNICODE_CHARACTER_CLASS;
                     break;
                 case 'u':
-                    constant |= Pattern.UNICODE_CASE;
+                    regexFlags |= Pattern.UNICODE_CASE;
                     break;
                 case 'x':
-                    constant |= Pattern.COMMENTS;
+                    regexFlags |= Pattern.COMMENTS;
                     break;
                 default:
                     throw new IllegalArgumentException("invalid regular expression: unknown flag [" + flag + "]");
             }
         }
 
+        Pattern compiled;
         try {
-            Pattern.compile(pattern, constant);
+            compiled = Pattern.compile(pattern, regexFlags);
         } catch (PatternSyntaxException pse) {
             throw new Location(location.getSourceName(), location.getOffset() + 1 + pse.getIndex()).createError(
                     new IllegalArgumentException("invalid regular expression: " +
-                            "could not compile regex constant [" + pattern + "] with flags [" + flags + "]", pse));
+                            "could not compile regex constant [" + pattern + "] with flags [" + flags + "]: " + pse.getDescription(), pse));
         }
 
         semanticScope.putDecoration(userRegexNode, new ValueType(Pattern.class));
-        semanticScope.putDecoration(userRegexNode, new StandardConstant(constant));
+        semanticScope.putDecoration(userRegexNode, new StandardConstant(compiled));
     }
 
     /**
@@ -2204,6 +2199,10 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
         semanticScope.setCondition(userBlockNode, LastSource.class);
         visit(userBlockNode, lambdaScope);
 
+        if (lambdaScope.usesInstanceMethod()) {
+            semanticScope.setCondition(userLambdaNode, InstanceCapturingLambda.class);
+        }
+
         if (semanticScope.getCondition(userBlockNode, MethodEscape.class) == false) {
             throw userLambdaNode.createError(new IllegalArgumentException("not all paths return a value for lambda"));
         }
@@ -2223,18 +2222,19 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
 
         // desugar lambda body into a synthetic method
         String name = scriptScope.getNextSyntheticName("lambda");
-        scriptScope.getFunctionTable().addFunction(name, returnType, typeParametersWithCaptures, true, true);
+        boolean isStatic = lambdaScope.usesInstanceMethod() == false;
+        scriptScope.getFunctionTable().addFunction(name, returnType, typeParametersWithCaptures, true, isStatic);
 
         Class<?> valueType;
         // setup method reference to synthetic method
         if (targetType == null) {
-            String defReferenceEncoding = "Sthis." + name + "," + capturedVariables.size();
             valueType = String.class;
-            semanticScope.putDecoration(userLambdaNode, new EncodingDecoration(defReferenceEncoding));
+            semanticScope.putDecoration(userLambdaNode,
+                    new EncodingDecoration(true, lambdaScope.usesInstanceMethod(), "this", name, capturedVariables.size()));
         } else {
             FunctionRef ref = FunctionRef.create(scriptScope.getPainlessLookup(), scriptScope.getFunctionTable(),
                     location, targetType.getTargetType(), "this", name, capturedVariables.size(),
-                    scriptScope.getCompilerSettings().asMap());
+                    scriptScope.getCompilerSettings().asMap(), lambdaScope.usesInstanceMethod());
             valueType = targetType.getTargetType();
             semanticScope.putDecoration(userLambdaNode, new ReferenceDecoration(ref));
         }
@@ -2265,7 +2265,8 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
         TargetType targetType = semanticScope.getDecoration(userFunctionRefNode, TargetType.class);
         Class<?> valueType;
 
-        if (symbol.equals("this") || type != null)  {
+        boolean isInstanceReference = "this".equals(symbol);
+        if (isInstanceReference || type != null)  {
             if (semanticScope.getCondition(userFunctionRefNode, Write.class)) {
                 throw userFunctionRefNode.createError(new IllegalArgumentException(
                         "invalid assignment: cannot assign a value to function reference [" + symbol + ":" + methodName + "]"));
@@ -2276,14 +2277,16 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
                         "not a statement: function reference [" + symbol + ":" + methodName + "] not used"));
             }
 
+            if (isInstanceReference) {
+                semanticScope.setCondition(userFunctionRefNode, InstanceCapturingFunctionRef.class);
+            }
             if (targetType == null) {
                 valueType = String.class;
-                String defReferenceEncoding = "S" + symbol + "." + methodName + ",0";
-                semanticScope.putDecoration(userFunctionRefNode, new EncodingDecoration(defReferenceEncoding));
+                semanticScope.putDecoration(userFunctionRefNode, new EncodingDecoration(true, isInstanceReference, symbol, methodName, 0));
             } else {
                 FunctionRef ref = FunctionRef.create(scriptScope.getPainlessLookup(), scriptScope.getFunctionTable(),
                         location, targetType.getTargetType(), symbol, methodName, 0,
-                        scriptScope.getCompilerSettings().asMap());
+                        scriptScope.getCompilerSettings().asMap(), isInstanceReference);
                 valueType = targetType.getTargetType();
                 semanticScope.putDecoration(userFunctionRefNode, new ReferenceDecoration(ref));
             }
@@ -2300,24 +2303,29 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
 
             SemanticScope.Variable captured = semanticScope.getVariable(location, symbol);
             semanticScope.putDecoration(userFunctionRefNode, new CapturesDecoration(Collections.singletonList(captured)));
+
+            if (captured.getType().isPrimitive()) {
+                semanticScope.setCondition(userFunctionRefNode, CaptureBox.class);
+            }
+
             if (targetType == null) {
-                String defReferenceEncoding;
+                EncodingDecoration encodingDecoration;
                 if (captured.getType() == def.class) {
                     // dynamic implementation
-                    defReferenceEncoding = "D" + symbol + "." + methodName + ",1";
+                    encodingDecoration = new EncodingDecoration(false, false, symbol, methodName, 1);
                 } else {
                     // typed implementation
-                    defReferenceEncoding = "S" + captured.getCanonicalTypeName() + "." + methodName + ",1";
+                    encodingDecoration = new EncodingDecoration(true, false, captured.getCanonicalTypeName(), methodName, 1);
                 }
                 valueType = String.class;
-                semanticScope.putDecoration(userFunctionRefNode, new EncodingDecoration(defReferenceEncoding));
+                semanticScope.putDecoration(userFunctionRefNode, encodingDecoration);
             } else {
                 valueType = targetType.getTargetType();
                 // static case
                 if (captured.getType() != def.class) {
                     FunctionRef ref = FunctionRef.create(scriptScope.getPainlessLookup(), scriptScope.getFunctionTable(), location,
                             targetType.getTargetType(), captured.getCanonicalTypeName(), methodName, 1,
-                            scriptScope.getCompilerSettings().asMap());
+                            scriptScope.getCompilerSettings().asMap(), false);
                     semanticScope.putDecoration(userFunctionRefNode, new ReferenceDecoration(ref));
                 }
             }
@@ -2361,13 +2369,12 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
         semanticScope.putDecoration(userNewArrayFunctionRefNode, new MethodNameDecoration(name));
 
         if (targetType == null) {
-            String defReferenceEncoding = "Sthis." + name + ",0";
             valueType = String.class;
-            scriptScope.putDecoration(userNewArrayFunctionRefNode, new EncodingDecoration(defReferenceEncoding));
+            scriptScope.putDecoration(userNewArrayFunctionRefNode, new EncodingDecoration(true, false, "this", name, 0));
         } else {
             FunctionRef ref = FunctionRef.create(scriptScope.getPainlessLookup(), scriptScope.getFunctionTable(),
                     userNewArrayFunctionRefNode.getLocation(), targetType.getTargetType(), "this", name, 0,
-                    scriptScope.getCompilerSettings().asMap());
+                    scriptScope.getCompilerSettings().asMap(), false);
             valueType = targetType.getTargetType();
             semanticScope.putDecoration(userNewArrayFunctionRefNode, new ReferenceDecoration(ref));
         }
@@ -2548,7 +2555,7 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
                                 "set" + Character.toUpperCase(index.charAt(0)) + index.substring(1), 0);
 
                         if (getter != null || setter != null) {
-                            if (getter != null && (getter.returnType == void.class || !getter.typeParameters.isEmpty())) {
+                            if (getter != null && (getter.returnType == void.class || getter.typeParameters.isEmpty() == false)) {
                                 throw userDotNode.createError(new IllegalArgumentException(
                                         "Illegal get shortcut on field [" + index + "] for type [" + prefixCanonicalTypeName + "]."));
                             }
@@ -2594,7 +2601,7 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
                                 }
 
                                 if (getter != null && setter != null &&
-                                        (!getter.typeParameters.get(0).equals(setter.typeParameters.get(0)) ||
+                                        (getter.typeParameters.get(0).equals(setter.typeParameters.get(0)) == false ||
                                         getter.returnType.equals(setter.typeParameters.get(1)) == false)) {
                                     throw userDotNode.createError(new IllegalArgumentException("Shortcut argument types must match."));
                                 }
@@ -2638,8 +2645,9 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
                                             "Illegal list set shortcut for type [" + prefixCanonicalTypeName + "]."));
                                 }
 
-                                if (getter != null && setter != null && (!getter.typeParameters.get(0).equals(setter.typeParameters.get(0))
-                                        || !getter.returnType.equals(setter.typeParameters.get(1)))) {
+                                if (getter != null && setter != null &&
+                                        (getter.typeParameters.get(0).equals(setter.typeParameters.get(0)) == false
+                                            || getter.returnType.equals(setter.typeParameters.get(1)) == false)) {
                                     throw userDotNode.createError(new IllegalArgumentException("Shortcut argument types must match."));
                                 }
 
@@ -2755,7 +2763,7 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
                         "Illegal map set shortcut for type [" + canonicalClassName + "]."));
             }
 
-            if (getter != null && setter != null && (!getter.typeParameters.get(0).equals(setter.typeParameters.get(0)) ||
+            if (getter != null && setter != null && (getter.typeParameters.get(0).equals(setter.typeParameters.get(0)) == false ||
                     getter.returnType.equals(setter.typeParameters.get(1)) == false)) {
                 throw userBraceNode.createError(new IllegalArgumentException("Shortcut argument types must match."));
             }
@@ -2801,8 +2809,8 @@ public class DefaultSemanticAnalysisPhase extends UserTreeBaseVisitor<SemanticSc
                         "Illegal list set shortcut for type [" + canonicalClassName + "]."));
             }
 
-            if (getter != null && setter != null && (!getter.typeParameters.get(0).equals(setter.typeParameters.get(0))
-                    || !getter.returnType.equals(setter.typeParameters.get(1)))) {
+            if (getter != null && setter != null && (getter.typeParameters.get(0).equals(setter.typeParameters.get(0)) == false
+                    || getter.returnType.equals(setter.typeParameters.get(1)) == false)) {
                 throw userBraceNode.createError(new IllegalArgumentException("Shortcut argument types must match."));
             }
 

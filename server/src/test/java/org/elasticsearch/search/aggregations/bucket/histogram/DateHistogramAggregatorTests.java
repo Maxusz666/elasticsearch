@@ -1,26 +1,16 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.search.aggregations.bucket.histogram;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.LongPoint;
+import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
@@ -32,11 +22,15 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.store.Directory;
 import org.elasticsearch.common.time.DateFormatter;
 import org.elasticsearch.common.time.DateFormatters;
+import org.elasticsearch.core.CheckedConsumer;
+import org.elasticsearch.index.mapper.BooleanFieldMapper;
 import org.elasticsearch.index.mapper.DateFieldMapper;
+import org.elasticsearch.index.mapper.FieldNamesFieldMapper;
 import org.elasticsearch.search.aggregations.AggregationBuilder;
 import org.elasticsearch.search.aggregations.Aggregator;
 import org.elasticsearch.search.aggregations.BucketOrder;
 import org.elasticsearch.search.aggregations.InternalAggregation.ReduceContext;
+import org.elasticsearch.search.aggregations.bucket.range.RangeAggregator;
 import org.elasticsearch.search.aggregations.bucket.terms.StringTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator.PipelineTree;
@@ -49,11 +43,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.IntStream;
 
+import static io.github.nik9000.mapmatcher.ListMatcher.matchesList;
+import static io.github.nik9000.mapmatcher.MapMatcher.assertMap;
+import static io.github.nik9000.mapmatcher.MapMatcher.matchesMap;
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.not;
 
@@ -84,6 +84,22 @@ public class DateHistogramAggregatorTests extends DateHistogramAggregatorTestCas
                 }, false
         );
         assertWarnings("[interval] on [date_histogram] is deprecated, use [fixed_interval] or [calendar_interval] in the future.");
+    }
+
+    public void testBooleanFieldDeprecated() throws IOException {
+        final String fieldName = "bogusBoolean";
+        testCase(
+            new DateHistogramAggregationBuilder("name").calendarInterval(DateHistogramInterval.HOUR).field(fieldName),
+            new MatchAllDocsQuery(),
+            iw -> {
+                Document d = new Document();
+                d.add(new SortedNumericDocValuesField(fieldName, 0));
+                iw.addDocument(d);
+            },
+            a -> {},
+            new BooleanFieldMapper.BooleanFieldType(fieldName)
+        );
+        assertWarnings("Running DateHistogram aggregations on [boolean] fields is deprecated");
     }
 
     public void testMatchNoDocs() throws IOException {
@@ -1220,6 +1236,58 @@ public class DateHistogramAggregatorTests extends DateHistogramAggregatorTestCas
                 .calendarInterval(DateHistogramInterval.YEAR)
                 .hardBounds(new LongBounds("2017", "2019")),
             true
+        );
+    }
+
+    public void testOneBucketOptimized() throws IOException {
+        AggregationBuilder builder = new DateHistogramAggregationBuilder("d").field("f").calendarInterval(DateHistogramInterval.DAY);
+        CheckedConsumer<RandomIndexWriter, IOException> buildIndex = iw -> {
+            long start = DateFieldMapper.DEFAULT_DATE_TIME_FORMATTER.parseMillis("2020-01-01T00:00:01");
+            for (int i = 0; i < RangeAggregator.DOCS_PER_RANGE_TO_USE_FILTERS; i++) {
+                long date = start + i;
+                iw.addDocument(List.of(new LongPoint("f", date), new NumericDocValuesField("f", date)));
+            }
+            for (int i = 0; i < 10; i++) {
+                iw.addDocument(List.of());
+            }
+        };
+        DateFieldMapper.DateFieldType ft = new DateFieldMapper.DateFieldType("f");
+        // Exists queries convert to MatchNone if this isn't defined
+        FieldNamesFieldMapper.FieldNamesFieldType fnft = new FieldNamesFieldMapper.FieldNamesFieldType(true);
+        debugTestCase(
+            builder,
+            new MatchAllDocsQuery(),
+            buildIndex,
+            (InternalDateHistogram result, Class<? extends Aggregator> impl, Map<String, Map<String, Object>> debug) -> {
+                assertThat(result.getBuckets(), hasSize(1));
+                assertThat(result.getBuckets().get(0).getKeyAsString(), equalTo("2020-01-01T00:00:00.000Z"));
+                assertThat(result.getBuckets().get(0).getDocCount(), equalTo(5000L));
+
+                assertThat(impl, equalTo(DateHistogramAggregator.FromDateRange.class));
+                assertMap(debug, matchesMap()
+                    .entry("d", matchesMap()
+                        .entry("delegate", "RangeAggregator.FromFilters")
+                        .entry("delegate_debug", matchesMap()
+                            .entry("ranges", 1)
+                            .entry("average_docs_per_range", 5010.0)
+                            .entry("delegate", "FilterByFilterAggregator")
+                            .entry("delegate_debug", matchesMap()
+                                .entry("segments_with_doc_count_field", 0)
+                                .entry("segments_with_deleted_docs", 0)
+                                .entry("segments_counted", greaterThan(0))
+                                .entry("segments_collected", 0)
+                                .entry("filters", matchesList().item(matchesMap()
+                                    .entry("query", "DocValuesFieldExistsQuery [field=f]")
+                                    .entry("specialized_for", "docvalues_field_exists")
+                                    .entry("results_from_metadata", greaterThan(0)))
+                                )
+                            )
+                        )
+                    )
+                );
+            },
+            ft,
+            fnft
         );
     }
 

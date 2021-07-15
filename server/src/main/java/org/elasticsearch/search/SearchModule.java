@@ -1,38 +1,31 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.search;
 
 import org.apache.lucene.search.BooleanQuery;
+import org.elasticsearch.common.CheckedBiConsumer;
 import org.elasticsearch.common.NamedRegistry;
-import org.elasticsearch.common.ParseField;
+import org.elasticsearch.common.xcontent.ParseField;
 import org.elasticsearch.common.geo.GeoShapeType;
 import org.elasticsearch.common.geo.ShapesAvailability;
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry;
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry.Entry;
+import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.core.Nullable;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.BoostingQueryBuilder;
+import org.elasticsearch.index.query.CombinedFieldsQueryBuilder;
 import org.elasticsearch.index.query.ConstantScoreQueryBuilder;
 import org.elasticsearch.index.query.DisMaxQueryBuilder;
 import org.elasticsearch.index.query.DistanceFeatureQueryBuilder;
@@ -233,6 +226,7 @@ import org.elasticsearch.search.fetch.subphase.highlight.HighlightPhase;
 import org.elasticsearch.search.fetch.subphase.highlight.Highlighter;
 import org.elasticsearch.search.fetch.subphase.highlight.PlainHighlighter;
 import org.elasticsearch.search.fetch.subphase.highlight.UnifiedHighlighter;
+import org.elasticsearch.search.internal.ShardSearchRequest;
 import org.elasticsearch.search.rescore.QueryRescorerBuilder;
 import org.elasticsearch.search.rescore.RescorerBuilder;
 import org.elasticsearch.search.sort.FieldSortBuilder;
@@ -254,6 +248,7 @@ import org.elasticsearch.search.suggest.phrase.StupidBackoff;
 import org.elasticsearch.search.suggest.term.TermSuggestion;
 import org.elasticsearch.search.suggest.term.TermSuggestionBuilder;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -281,6 +276,7 @@ public class SearchModule {
     private final List<NamedWriteableRegistry.Entry> namedWriteables = new ArrayList<>();
     private final List<NamedXContentRegistry.Entry> namedXContents = new ArrayList<>();
     private final ValuesSourceRegistry valuesSourceRegistry;
+    private final CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> requestCacheKeyDifferentiator;
 
     /**
      * Constructs a new SearchModule object
@@ -306,6 +302,7 @@ public class SearchModule {
         registerSearchExts(plugins);
         registerShapes();
         registerIntervalsSourceProviders();
+        requestCacheKeyDifferentiator = registerRequestCacheKeyDifferentiator(plugins);
         namedWriteables.addAll(SortValue.namedWriteables());
     }
 
@@ -319,6 +316,11 @@ public class SearchModule {
 
     public ValuesSourceRegistry getValuesSourceRegistry() {
         return valuesSourceRegistry;
+    }
+
+    @Nullable
+    public CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> getRequestCacheKeyDifferentiator() {
+        return requestCacheKeyDifferentiator;
     }
 
     /**
@@ -775,6 +777,8 @@ public class SearchModule {
         registerQuery(new QuerySpec<>(MatchPhrasePrefixQueryBuilder.NAME, MatchPhrasePrefixQueryBuilder::new,
                 MatchPhrasePrefixQueryBuilder::fromXContent));
         registerQuery(new QuerySpec<>(MultiMatchQueryBuilder.NAME, MultiMatchQueryBuilder::new, MultiMatchQueryBuilder::fromXContent));
+        registerQuery(new QuerySpec<>(CombinedFieldsQueryBuilder.NAME, CombinedFieldsQueryBuilder::new,
+            CombinedFieldsQueryBuilder::fromXContent));
         registerQuery(new QuerySpec<>(NestedQueryBuilder.NAME, NestedQueryBuilder::new, NestedQueryBuilder::fromXContent));
         registerQuery(new QuerySpec<>(DisMaxQueryBuilder.NAME, DisMaxQueryBuilder::new, DisMaxQueryBuilder::fromXContent));
         registerQuery(new QuerySpec<>(IdsQueryBuilder.NAME, IdsQueryBuilder::new, IdsQueryBuilder::fromXContent));
@@ -818,7 +822,9 @@ public class SearchModule {
         registerQuery(new QuerySpec<>(GeoDistanceQueryBuilder.NAME, GeoDistanceQueryBuilder::new, GeoDistanceQueryBuilder::fromXContent));
         registerQuery(new QuerySpec<>(GeoBoundingBoxQueryBuilder.NAME, GeoBoundingBoxQueryBuilder::new,
                 GeoBoundingBoxQueryBuilder::fromXContent));
-        registerQuery(new QuerySpec<>(GeoPolygonQueryBuilder.NAME, GeoPolygonQueryBuilder::new, GeoPolygonQueryBuilder::fromXContent));
+        registerQuery(new QuerySpec<>(
+            (new ParseField(GeoPolygonQueryBuilder.NAME).withAllDeprecated(GeoPolygonQueryBuilder.GEO_POLYGON_DEPRECATION_MSG)),
+            GeoPolygonQueryBuilder::new, GeoPolygonQueryBuilder::fromXContent));
         registerQuery(new QuerySpec<>(ExistsQueryBuilder.NAME, ExistsQueryBuilder::new, ExistsQueryBuilder::fromXContent));
         registerQuery(new QuerySpec<>(MatchNoneQueryBuilder.NAME, MatchNoneQueryBuilder::new, MatchNoneQueryBuilder::fromXContent));
         registerQuery(new QuerySpec<>(TermsSetQueryBuilder.NAME, TermsSetQueryBuilder::new, TermsSetQueryBuilder::fromXContent));
@@ -837,6 +843,22 @@ public class SearchModule {
 
     private void registerIntervalsSourceProviders() {
         namedWriteables.addAll(getIntervalsSourceProviderNamedWritables());
+    }
+
+    private CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> registerRequestCacheKeyDifferentiator(
+        List<SearchPlugin> plugins) {
+        CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> differentiator = null;
+        for (SearchPlugin plugin : plugins) {
+            final CheckedBiConsumer<ShardSearchRequest, StreamOutput, IOException> d = plugin.getRequestCacheKeyDifferentiator();
+            if (d != null) {
+                if (differentiator == null) {
+                    differentiator = d;
+                } else {
+                    throw new IllegalArgumentException("Cannot have more than one plugin providing a request cache key differentiator");
+                }
+            }
+        }
+        return differentiator;
     }
 
     public static List<NamedWriteableRegistry.Entry> getIntervalsSourceProviderNamedWritables() {

@@ -1,27 +1,15 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.test;
 
 import com.carrotsearch.randomizedtesting.RandomizedTest;
 import com.carrotsearch.randomizedtesting.SeedUtils;
-
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.util.Accountable;
 import org.elasticsearch.Version;
@@ -52,6 +40,7 @@ import org.elasticsearch.index.analysis.IndexAnalyzers;
 import org.elasticsearch.index.cache.bitset.BitsetFilterCache;
 import org.elasticsearch.index.fielddata.IndexFieldDataCache;
 import org.elasticsearch.index.fielddata.IndexFieldDataService;
+import org.elasticsearch.index.mapper.MapperRegistry;
 import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.index.query.SearchExecutionContext;
 import org.elasticsearch.index.shard.ShardId;
@@ -60,7 +49,6 @@ import org.elasticsearch.indices.IndicesModule;
 import org.elasticsearch.indices.analysis.AnalysisModule;
 import org.elasticsearch.indices.breaker.NoneCircuitBreakerService;
 import org.elasticsearch.indices.fielddata.cache.IndicesFieldDataCache;
-import org.elasticsearch.indices.mapper.MapperRegistry;
 import org.elasticsearch.node.InternalSettingsPreparer;
 import org.elasticsearch.plugins.MapperPlugin;
 import org.elasticsearch.plugins.Plugin;
@@ -69,6 +57,7 @@ import org.elasticsearch.plugins.ScriptPlugin;
 import org.elasticsearch.plugins.SearchPlugin;
 import org.elasticsearch.script.MockScriptEngine;
 import org.elasticsearch.script.MockScriptService;
+import org.elasticsearch.script.ScriptCompiler;
 import org.elasticsearch.script.ScriptContext;
 import org.elasticsearch.script.ScriptEngine;
 import org.elasticsearch.script.ScriptModule;
@@ -279,6 +268,7 @@ public abstract class AbstractBuilderTestCase extends ESTestCase {
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             if (method.equals(Client.class.getMethod("get", GetRequest.class, ActionListener.class))){
                 GetResponse getResponse = delegate.executeGet((GetRequest) args[0]);
+                @SuppressWarnings("unchecked")  // We matched the method above.
                 ActionListener<GetResponse> listener = (ActionListener<GetResponse>) args[1];
                 if (randomBoolean()) {
                     listener.onResponse(getResponse);
@@ -332,7 +322,7 @@ public abstract class AbstractBuilderTestCase extends ESTestCase {
 
             client = (Client) Proxy.newProxyInstance(
                     Client.class.getClassLoader(),
-                    new Class[]{Client.class},
+                    new Class<?>[]{Client.class},
                     clientInvocationHandler);
             ScriptModule scriptModule = createScriptModule(pluginsService.filterPlugins(ScriptPlugin.class));
             List<Setting<?>> additionalSettings = pluginsService.getPluginSettings();
@@ -355,7 +345,7 @@ public abstract class AbstractBuilderTestCase extends ESTestCase {
             similarityService = new SimilarityService(idxSettings, null, Collections.emptyMap());
             MapperRegistry mapperRegistry = indicesModule.getMapperRegistry();
             mapperService = new MapperService(idxSettings, indexAnalyzers, xContentRegistry, similarityService, mapperRegistry,
-                    () -> createShardContext(null), () -> false, null);
+                    () -> createShardContext(null), () -> false, ScriptCompiler.NONE);
             IndicesFieldDataCache indicesFieldDataCache = new IndicesFieldDataCache(nodeSettings, new IndexFieldDataCache.Listener() {
             });
             indexFieldDataService = new IndexFieldDataService(idxSettings, indicesFieldDataCache,

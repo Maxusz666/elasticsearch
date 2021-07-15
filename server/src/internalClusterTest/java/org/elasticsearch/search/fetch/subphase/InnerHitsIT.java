@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.search.fetch.subphase;
@@ -176,7 +165,10 @@ public class InnerHitsIT extends ESIntegTestCase {
         assertThat(innerHits.getAt(0).getHighlightFields().get("comments.message").getFragments()[0].string(),
                 equalTo("<em>fox</em> eat quick"));
         assertThat(innerHits.getAt(0).getExplanation().toString(), containsString("weight(comments.message:fox in"));
-        assertThat(innerHits.getAt(0).getFields().get("comments.message").getValue().toString(), equalTo("fox eat quick"));
+        assertThat(
+            innerHits.getAt(0).getFields().get("comments").getValue(),
+            equalTo(Collections.singletonMap("message", Collections.singletonList("fox eat quick")))
+        );
         assertThat(innerHits.getAt(0).getFields().get("script").getValue().toString(), equalTo("5"));
 
         response = client().prepareSearch("articles")
@@ -489,16 +481,17 @@ public class InnerHitsIT extends ESIntegTestCase {
                 .endObject()));
         indexRandom(true, requests);
 
-        Exception e = expectThrows(Exception.class, () -> client().prepareSearch("articles").setQuery(nestedQuery("comments.messages",
-            matchQuery("comments.messages.message", "fox"), ScoreMode.Avg).innerHit(new InnerHitBuilder())).get());
-        assertEquals("Cannot execute inner hits. One or more parent object fields of nested field [comments.messages] are " +
-            "not nested. All parent fields need to be nested fields too", e.getCause().getCause().getMessage());
-
-        e = expectThrows(Exception.class, () -> client().prepareSearch("articles").setQuery(nestedQuery("comments.messages",
+        SearchResponse resp1 = client().prepareSearch("articles").setQuery(nestedQuery("comments.messages",
             matchQuery("comments.messages.message", "fox"), ScoreMode.Avg).innerHit(new InnerHitBuilder()
-            .setFetchSourceContext(new FetchSourceContext(true)))).get());
-        assertEquals("Cannot execute inner hits. One or more parent object fields of nested field [comments.messages] are " +
-            "not nested. All parent fields need to be nested fields too", e.getCause().getCause().getMessage());
+            .setFetchSourceContext(new FetchSourceContext(true)))).get();
+        assertNoFailures(resp1);
+        assertHitCount(resp1, 1);
+        SearchHit parent = resp1.getHits().getAt(0);
+        assertThat(parent.getId(), equalTo("1"));
+        SearchHits inner = parent.getInnerHits().get("comments.messages");
+        assertThat(inner.getTotalHits().value, equalTo(2L));
+        assertThat(inner.getAt(0).getSourceAsString(), equalTo("{\"message\":\"no fox\"}"));
+        assertThat(inner.getAt(1).getSourceAsString(), equalTo("{\"message\":\"fox eat quick\"}"));
 
         SearchResponse response = client().prepareSearch("articles")
                 .setQuery(nestedQuery("comments.messages", matchQuery("comments.messages.message", "fox"), ScoreMode.Avg)

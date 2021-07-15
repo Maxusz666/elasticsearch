@@ -1,25 +1,14 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.index.search;
 
-import org.elasticsearch.common.Nullable;
+import org.elasticsearch.core.Nullable;
 import org.elasticsearch.common.regex.Regex;
 import org.elasticsearch.index.mapper.MappedFieldType;
 import org.elasticsearch.index.mapper.TextSearchInfo;
@@ -87,7 +76,14 @@ public final class QueryParserHelper {
             boolean allField = Regex.isMatchAllPattern(fieldEntry.getKey());
             boolean multiField = Regex.isSimpleMatchPattern(fieldEntry.getKey());
             float weight = fieldEntry.getValue() == null ? 1.0f : fieldEntry.getValue();
-            Map<String, Float> fieldMap = resolveMappingField(context, fieldEntry.getKey(), weight, !multiField, !allField, fieldSuffix);
+            Map<String, Float> fieldMap = resolveMappingField(
+                context,
+                fieldEntry.getKey(),
+                weight,
+                multiField == false,
+                allField == false,
+                fieldSuffix
+            );
 
             for (Map.Entry<String, Float> field : fieldMap.entrySet()) {
                 float boost = field.getValue();
@@ -116,16 +112,12 @@ public final class QueryParserHelper {
      */
     static Map<String, Float> resolveMappingField(SearchExecutionContext context, String fieldOrPattern, float weight,
                                                   boolean acceptAllTypes, boolean acceptMetadataField, String fieldSuffix) {
-        Set<String> allFields = context.simpleMatchToIndexNames(fieldOrPattern);
+        Set<String> allFields = context.getMatchingFieldNames(fieldOrPattern);
         Map<String, Float> fields = new HashMap<>();
 
         for (String fieldName : allFields) {
-            if (fieldSuffix != null && context.getFieldType(fieldName + fieldSuffix) != null) {
+            if (fieldSuffix != null && context.isFieldMapped(fieldName + fieldSuffix)) {
                 fieldName = fieldName + fieldSuffix;
-            }
-
-            if (context.isFieldMapped(fieldName) == false) {
-                continue;
             }
 
             MappedFieldType fieldType = context.getFieldType(fieldName);

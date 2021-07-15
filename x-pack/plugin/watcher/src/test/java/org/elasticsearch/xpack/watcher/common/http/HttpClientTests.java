@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.watcher.common.http;
 
@@ -14,15 +15,15 @@ import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.apache.logging.log4j.util.Supplier;
 import org.apache.lucene.util.automaton.CharacterRunAutomaton;
 import org.elasticsearch.ElasticsearchException;
-import org.elasticsearch.bootstrap.JavaVersion;
+import org.elasticsearch.jdk.JavaVersion;
 import org.elasticsearch.cluster.service.ClusterService;
-import org.elasticsearch.common.collect.Tuple;
+import org.elasticsearch.core.Tuple;
 import org.elasticsearch.common.settings.ClusterSettings;
 import org.elasticsearch.common.settings.MockSecureSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.ByteSizeUnit;
 import org.elasticsearch.common.unit.ByteSizeValue;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.env.Environment;
 import org.elasticsearch.env.TestEnvironment;
@@ -767,6 +768,50 @@ public class HttpClientTests extends ESTestCase {
         assertCreateUri("https://example.org/foo", "/foo");
         assertCreateUri("https://example.org/", "");
         assertCreateUri("https://example.org", "");
+    }
+
+    public void testConnectionReuse() throws Exception {
+        final HttpRequest request = HttpRequest.builder("localhost", webServer.getPort())
+                .method(HttpMethod.POST)
+                .path("/" + randomAlphaOfLength(5))
+                .build();
+
+        webServer.enqueue(new MockResponse().setResponseCode(200).setBody("whatever"));
+        webServer.enqueue(new MockResponse().setResponseCode(200).setBody("whatever"));
+
+        httpClient.execute(request);
+        httpClient.execute(request);
+
+        assertThat(webServer.requests(), hasSize(2));
+        // by default we re-use connections forever
+        assertThat(webServer.requests().get(0).getRemoteAddress(), equalTo(webServer.requests().get(1).getRemoteAddress()));
+        webServer.clearRequests();
+
+        try (HttpClient unpooledHttpClient = new HttpClient(
+                Settings.builder().put(HttpSettings.CONNECTION_POOL_TTL.getKey(), "99ms").build(),
+                new SSLService(environment),
+                null,
+                mockClusterService())) {
+
+            webServer.enqueue(new MockResponse().setResponseCode(200).setBody("whatever"));
+            webServer.enqueue(new MockResponse().setResponseCode(200).setBody("whatever"));
+
+            unpooledHttpClient.execute(request);
+
+            // Connection pool expiry is based on System.currentTimeMillis so wait for this clock to advance far enough for the connection
+            // we just used to expire
+            final long waitStartTime = System.currentTimeMillis();
+            while (System.currentTimeMillis() <= waitStartTime + 100) {
+                //noinspection BusyWait
+                Thread.sleep(100);
+            }
+
+            unpooledHttpClient.execute(request);
+
+            assertThat(webServer.requests(), hasSize(2));
+            // the connection expired before re-use so we made a new one
+            assertThat(webServer.requests().get(0).getRemoteAddress(), not(equalTo(webServer.requests().get(1).getRemoteAddress())));
+        }
     }
 
     private void assertCreateUri(String uri, String expectedPath) {

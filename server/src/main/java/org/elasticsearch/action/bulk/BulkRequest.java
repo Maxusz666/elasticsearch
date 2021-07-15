@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.action.bulk;
@@ -31,13 +20,14 @@ import org.elasticsearch.action.support.ActiveShardCount;
 import org.elasticsearch.action.support.WriteRequest;
 import org.elasticsearch.action.support.replication.ReplicationRequest;
 import org.elasticsearch.action.update.UpdateRequest;
-import org.elasticsearch.common.Nullable;
+import org.elasticsearch.core.Nullable;
+import org.elasticsearch.core.RestApiVersion;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
 
@@ -238,7 +228,7 @@ public class BulkRequest extends ActionRequest implements CompositeIndicesReques
      */
     public BulkRequest add(BytesReference data, @Nullable String defaultIndex,
                            XContentType xContentType) throws IOException {
-        return add(data, defaultIndex, null, null, null, null, true, xContentType);
+        return add(data, defaultIndex, null, null, null, null, true, xContentType, RestApiVersion.current());
     }
 
     /**
@@ -246,18 +236,18 @@ public class BulkRequest extends ActionRequest implements CompositeIndicesReques
      */
     public BulkRequest add(BytesReference data, @Nullable String defaultIndex, boolean allowExplicitIndex,
                            XContentType xContentType) throws IOException {
-        return add(data, defaultIndex, null, null, null, null, allowExplicitIndex, xContentType);
+        return add(data, defaultIndex, null, null, null, null, allowExplicitIndex, xContentType, RestApiVersion.current());
 
     }
 
     public BulkRequest add(BytesReference data, @Nullable String defaultIndex,
                            @Nullable String defaultRouting, @Nullable FetchSourceContext defaultFetchSourceContext,
                            @Nullable String defaultPipeline, @Nullable Boolean defaultRequireAlias, boolean allowExplicitIndex,
-                           XContentType xContentType) throws IOException {
+                           XContentType xContentType, RestApiVersion restApiVersion) throws IOException {
         String routing = valueOrDefault(defaultRouting, globalRouting);
         String pipeline = valueOrDefault(defaultPipeline, globalPipeline);
         Boolean requireAlias = valueOrDefault(defaultRequireAlias, globalRequireAlias);
-        new BulkRequestParser(true).parse(data, defaultIndex, routing, defaultFetchSourceContext, pipeline, requireAlias,
+        new BulkRequestParser(true, restApiVersion).parse(data, defaultIndex, routing, defaultFetchSourceContext, pipeline, requireAlias,
                 allowExplicitIndex, xContentType, (indexRequest, type) -> internalAdd(indexRequest), this::internalAdd, this::add);
         return this;
     }
@@ -419,14 +409,14 @@ public class BulkRequest extends ActionRequest implements CompositeIndicesReques
     }
 
     private static String valueOrDefault(String value, String globalDefault) {
-        if (Strings.isNullOrEmpty(value) && !Strings.isNullOrEmpty(globalDefault)) {
+        if (Strings.isNullOrEmpty(value) && Strings.isNullOrEmpty(globalDefault) == false) {
             return globalDefault;
         }
         return value;
     }
 
     private static Boolean valueOrDefault(Boolean value, Boolean globalDefault) {
-        if (Objects.isNull(value) && !Objects.isNull(globalDefault)) {
+        if (Objects.isNull(value) && Objects.isNull(globalDefault) == false) {
             return globalDefault;
         }
         return value;

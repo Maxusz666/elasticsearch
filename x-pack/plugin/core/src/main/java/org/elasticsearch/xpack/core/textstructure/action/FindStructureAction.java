@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 package org.elasticsearch.xpack.core.textstructure.action;
 
@@ -9,12 +10,12 @@ import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.ActionResponse;
 import org.elasticsearch.action.ActionType;
-import org.elasticsearch.common.ParseField;
+import org.elasticsearch.common.xcontent.ParseField;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.common.xcontent.StatusToXContentObject;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.rest.RestStatus;
@@ -33,13 +34,15 @@ public class FindStructureAction extends ActionType<FindStructureAction.Response
     public static final FindStructureAction INSTANCE = new FindStructureAction();
     public static final String NAME = "cluster:monitor/text_structure/findstructure";
 
+    public static final int MIN_SAMPLE_LINE_COUNT = 2;
+
     private FindStructureAction() {
         super(NAME, Response::new);
     }
 
     public static class Response extends ActionResponse implements StatusToXContentObject, Writeable {
 
-        private TextStructure textStructure;
+        private final TextStructure textStructure;
 
         public Response(TextStructure textStructure) {
             this.textStructure = textStructure;
@@ -293,9 +296,10 @@ public class FindStructureAction extends ActionType<FindStructureAction.Response
         @Override
         public ActionRequestValidationException validate() {
             ActionRequestValidationException validationException = null;
-            if (linesToSample != null && linesToSample <= 0) {
-                validationException =
-                    addValidationError("[" + LINES_TO_SAMPLE.getPreferredName() + "] must be positive if specified", validationException);
+            if (linesToSample != null && linesToSample < MIN_SAMPLE_LINE_COUNT) {
+                validationException = addValidationError(
+                    "[" + LINES_TO_SAMPLE.getPreferredName() + "] must be at least [" + MIN_SAMPLE_LINE_COUNT + "] if specified",
+                    validationException);
             }
             if (lineMergeSizeLimit != null && lineMergeSizeLimit <= 0) {
                 validationException = addValidationError("[" + LINE_MERGE_SIZE_LIMIT.getPreferredName() + "] must be positive if specified",

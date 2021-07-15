@@ -1,26 +1,16 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.plugins;
 
 import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
+
 import org.apache.lucene.search.spell.LevenshteinDistance;
 import org.apache.lucene.util.CollectionUtil;
 import org.apache.lucene.util.Constants;
@@ -37,20 +27,20 @@ import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator;
 import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentVerifierBuilderProvider;
 import org.elasticsearch.Build;
 import org.elasticsearch.Version;
-import org.elasticsearch.bootstrap.JarHell;
 import org.elasticsearch.bootstrap.PluginPolicyInfo;
 import org.elasticsearch.bootstrap.PolicyUtil;
 import org.elasticsearch.cli.EnvironmentAwareCommand;
 import org.elasticsearch.cli.ExitCodes;
 import org.elasticsearch.cli.Terminal;
 import org.elasticsearch.cli.UserException;
-import org.elasticsearch.common.SuppressForbidden;
-import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.hash.MessageDigests;
 import org.elasticsearch.common.io.Streams;
 import org.elasticsearch.common.util.set.Sets;
+import org.elasticsearch.core.SuppressForbidden;
+import org.elasticsearch.core.Tuple;
 import org.elasticsearch.core.internal.io.IOUtils;
 import org.elasticsearch.env.Environment;
+import org.elasticsearch.jdk.JarHell;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -723,7 +713,7 @@ class InstallPluginCommand extends EnvironmentAwareCommand {
 
                 // be on the safe side: do not rely on that directories are always extracted
                 // before their children (although this makes sense, but is it guaranteed?)
-                if (!Files.isSymbolicLink(targetFile.getParent())) {
+                if (Files.isSymbolicLink(targetFile.getParent()) == false) {
                     Files.createDirectories(targetFile.getParent());
                 }
                 if (entry.isDirectory() == false) {

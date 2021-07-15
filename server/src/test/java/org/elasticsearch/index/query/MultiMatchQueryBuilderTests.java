@@ -1,20 +1,9 @@
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
  */
 
 package org.elasticsearch.index.query;
@@ -39,7 +28,6 @@ import org.elasticsearch.common.lucene.search.MultiPhrasePrefixQuery;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.Fuzziness;
 import org.elasticsearch.index.query.MultiMatchQueryBuilder.Type;
-import org.elasticsearch.index.search.MatchQuery;
 import org.elasticsearch.test.AbstractQueryTestCase;
 import org.hamcrest.Matchers;
 
@@ -51,9 +39,9 @@ import java.util.Map;
 
 import static org.elasticsearch.index.query.QueryBuilders.multiMatchQuery;
 import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertBooleanSubQuery;
-import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertDisjunctionSubQuery;
 import static org.hamcrest.CoreMatchers.anyOf;
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.either;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.CoreMatchers.instanceOf;
@@ -129,7 +117,7 @@ public class MultiMatchQueryBuilderTests extends AbstractQueryTestCase<MultiMatc
             query.tieBreaker(randomFloat());
         }
         if (randomBoolean()) {
-            query.zeroTermsQuery(randomFrom(MatchQuery.ZeroTermsQuery.NONE, MatchQuery.ZeroTermsQuery.ALL));
+            query.zeroTermsQuery(randomFrom(ZeroTermsQueryOption.NONE, ZeroTermsQueryOption.ALL));
         }
         if (randomBoolean()) {
             query.autoGenerateSynonymsPhraseQuery(randomBoolean());
@@ -213,8 +201,8 @@ public class MultiMatchQueryBuilderTests extends AbstractQueryTestCase<MultiMatc
         DisjunctionMaxQuery dQuery = (DisjunctionMaxQuery) query;
         assertThat(dQuery.getTieBreakerMultiplier(), equalTo(1.0f));
         assertThat(dQuery.getDisjuncts().size(), equalTo(2));
-        assertThat(assertDisjunctionSubQuery(query, TermQuery.class, 0).getTerm(), equalTo(new Term(TEXT_FIELD_NAME, "test")));
-        assertThat(assertDisjunctionSubQuery(query, TermQuery.class, 1).getTerm(), equalTo(new Term(KEYWORD_FIELD_NAME, "test")));
+        assertThat(dQuery.getDisjuncts(),
+            hasItems(new TermQuery(new Term(TEXT_FIELD_NAME, "test")), new TermQuery(new Term(KEYWORD_FIELD_NAME, "test"))));
     }
 
     public void testToQueryMultipleFieldsDisMaxQuery() throws Exception {
@@ -235,8 +223,8 @@ public class MultiMatchQueryBuilderTests extends AbstractQueryTestCase<MultiMatc
         DisjunctionMaxQuery dQuery = (DisjunctionMaxQuery) query;
         assertThat(dQuery.getTieBreakerMultiplier(), equalTo(1.0f));
         assertThat(dQuery.getDisjuncts().size(), equalTo(2));
-        assertThat(assertDisjunctionSubQuery(query, TermQuery.class, 0).getTerm(), equalTo(new Term(TEXT_FIELD_NAME, "test")));
-        assertThat(assertDisjunctionSubQuery(query, TermQuery.class, 1).getTerm(), equalTo(new Term(KEYWORD_FIELD_NAME, "test")));
+        assertThat(dQuery.getDisjuncts(),
+            hasItems(new TermQuery(new Term(TEXT_FIELD_NAME, "test")), new TermQuery(new Term(KEYWORD_FIELD_NAME, "test"))));
     }
 
     public void testToQueryFieldMissing() throws Exception {
@@ -266,11 +254,20 @@ public class MultiMatchQueryBuilderTests extends AbstractQueryTestCase<MultiMatc
             assertThat(query, instanceOf(DisjunctionMaxQuery.class));
             final DisjunctionMaxQuery disMaxQuery = (DisjunctionMaxQuery) query;
             assertThat(disMaxQuery.getDisjuncts(), hasSize(2));
-            final BooleanQuery firstDisjunct = assertDisjunctionSubQuery(disMaxQuery, BooleanQuery.class, 0);
-            assertThat(firstDisjunct.clauses(), hasSize(2));
-            assertThat(assertBooleanSubQuery(firstDisjunct, TermQuery.class, 0).getTerm(), equalTo(new Term(TEXT_FIELD_NAME, "foo")));
-            final PrefixQuery secondDisjunct = assertDisjunctionSubQuery(disMaxQuery, PrefixQuery.class, 1);
-            assertThat(secondDisjunct.getPrefix(), equalTo(new Term(KEYWORD_FIELD_NAME, "foo bar")));
+            for (Query disjunct : disMaxQuery.getDisjuncts()) {
+                if (disjunct instanceof BooleanQuery) {
+                    final BooleanQuery firstDisjunct = (BooleanQuery) disjunct;
+                    assertThat(firstDisjunct.clauses(), hasSize(2));
+                    assertThat(assertBooleanSubQuery(firstDisjunct, TermQuery.class, 0).getTerm(),
+                        equalTo(new Term(TEXT_FIELD_NAME, "foo")));
+                } else if (disjunct instanceof PrefixQuery) {
+                    final PrefixQuery secondDisjunct = (PrefixQuery) disjunct;
+                    assertThat(secondDisjunct.getPrefix(), equalTo(new Term(KEYWORD_FIELD_NAME, "foo bar")));
+                } else {
+                    throw new AssertionError();
+                }
+                assertThat(disjunct, either(instanceOf(BooleanQuery.class)).or(instanceOf(PrefixQuery.class)));
+            }
         }
     }
 
